@@ -2,8 +2,22 @@
 
 import { FormEvent, useMemo, useState } from "react";
 
-type Stage = "find" | "roof" | "options" | "booking" | "complete";
-type PlanKey = "value" | "maximum";
+type Stage = "find" | "roof" | "result" | "booking" | "complete";
+
+const PANEL = {
+  watts: 490,
+  width: 1.13,
+  height: 1.8,
+  count: 14,
+};
+
+const ASSUMPTIONS = {
+  annualYieldPerKwp: 880,
+  selfUseRate: 0.45,
+  importTariff: 0.27,
+  exportTariff: 0.15,
+  standingChargePerDay: 0.55,
+};
 
 const addresses = [
   "2 Garrick Drive, London NW4 1HJ",
@@ -12,12 +26,11 @@ const addresses = [
   "8 Garrick Drive, London NW4 1HJ",
 ];
 
-const plans = {
-  value: { title: "Lower upfront cost", tag: "Best return", panels: 10, kwp: 4.55, battery: 5, inverter: "5 kW hybrid", price: 6950, generation: 4050, saving: 1091 },
-  maximum: { title: "Higher annual savings", tag: "Maximise your roof", panels: 14, kwp: 6.37, battery: 10, inverter: "6 kW hybrid", price: 9950, generation: 5660, saving: 1438 },
-};
-
-const money = (value: number) => new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 }).format(value);
+const money = (value: number) => new Intl.NumberFormat("en-GB", {
+  style: "currency",
+  currency: "GBP",
+  maximumFractionDigits: 0,
+}).format(value);
 
 function Brand() {
   return <button className="brand" onClick={() => window.location.reload()} aria-label="Apollo Solar home"><span className="brand-mark">A</span><span>Apollo Solar</span></button>;
@@ -26,11 +39,11 @@ function Brand() {
 function Progress({ stage }: { stage: Stage }) {
   const current = stage === "find" ? 1 : stage === "roof" ? 2 : 3;
   return <div className="progress" aria-label={`Step ${current} of 3`}>
-    {["Find your home", "See your roof", "Compare options"].map((label, i) => <div className={current >= i + 1 ? "active" : ""} key={label}><b>{current > i + 1 ? "✓" : i + 1}</b><span>{label}</span>{i < 2 && <i />}</div>)}
+    {["Find your home", "See your roof", "See your savings"].map((label, i) => <div className={current >= i + 1 ? "active" : ""} key={label}><b>{current > i + 1 ? "✓" : i + 1}</b><span>{label}</span>{i < 2 && <i />}</div>)}
   </div>;
 }
 
-function RoofGraphic({ panels = 14 }: { panels?: number }) {
+function RoofGraphic({ panels = PANEL.count }: { panels?: number }) {
   return <div className="roof-scene" aria-label={`Illustrative roof with ${panels} solar panels`}>
     <div className="roof-label"><span>●</span> Roof found<br/><b>6 Garrick Drive</b></div>
     <div className="compass">N<br/><span>↑</span></div>
@@ -46,30 +59,43 @@ export default function Home() {
   const [address, setAddress] = useState("6 Garrick Drive, London NW4 1HJ");
   const [usage, setUsage] = useState(5000);
   const [editingUsage, setEditingUsage] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<PlanKey>("value");
   const [form, setForm] = useState({ phone: "", email: "", time: "" });
 
-  const adjustedPlans = useMemo(() => {
-    const factor = Math.max(.86, Math.min(1.12, usage / 5000));
-    return Object.fromEntries(Object.entries(plans).map(([key, plan]) => {
-      const saving = Math.round(plan.saving * factor);
-      return [key, { ...plan, saving, roi: saving / plan.price * 100, payback: plan.price / saving, benefit: saving * 25 - plan.price }];
-    })) as Record<PlanKey, typeof plans.value & { roi: number; payback: number; benefit: number }>;
+  const estimate = useMemo(() => {
+    const panelArea = PANEL.width * PANEL.height;
+    const totalPanelArea = panelArea * PANEL.count;
+    const efficiency = PANEL.watts / (panelArea * 1000) * 100;
+    const systemKwp = PANEL.watts * PANEL.count / 1000;
+    const generation = Math.round(systemKwp * ASSUMPTIONS.annualYieldPerKwp);
+    const selfConsumed = Math.min(Math.round(generation * ASSUMPTIONS.selfUseRate), usage);
+    const exported = Math.max(generation - selfConsumed, 0);
+    const gridImportBefore = usage;
+    const gridImportAfter = Math.max(usage - selfConsumed, 0);
+    const standingCharge = ASSUMPTIONS.standingChargePerDay * 365;
+    const currentBill = gridImportBefore * ASSUMPTIONS.importTariff + standingCharge;
+    const gridBillAfter = gridImportAfter * ASSUMPTIONS.importTariff + standingCharge;
+    const exportIncome = exported * ASSUMPTIONS.exportTariff;
+    const effectiveBillAfter = Math.max(gridBillAfter - exportIncome, 0);
+    const annualBenefit = currentBill - effectiveBillAfter;
+    const billReduction = annualBenefit / currentBill * 100;
+    const usageCovered = selfConsumed / usage * 100;
+
+    return { panelArea, totalPanelArea, efficiency, systemKwp, generation, selfConsumed, exported, gridImportAfter, standingCharge, currentBill, gridBillAfter, exportIncome, effectiveBillAfter, annualBenefit, billReduction, usageCovered };
   }, [usage]);
 
   const findHome = () => { if (postcode.trim()) setSearched(true); };
   const chooseAddress = (item: string) => { setAddress(item); setStage("roof"); window.scrollTo({ top: 0, behavior: "smooth" }); };
-  const book = (key: PlanKey) => { setSelectedPlan(key); setStage("booking"); window.scrollTo({ top: 0, behavior: "smooth" }); };
-  const submit = (e: FormEvent) => { e.preventDefault(); setStage("complete"); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const go = (next: Stage) => { setStage(next); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const submit = (e: FormEvent) => { e.preventDefault(); go("complete"); };
 
   if (stage === "find") return <main>
-    <nav className="nav"><Brand /><span className="nav-note">60-second solar estimate</span></nav>
+    <nav className="nav"><Brand/><span className="nav-note">60-second solar estimate</span></nav>
     <section className="hero">
       <div className="hero-copy">
-        <div className="eyebrow"><span /> Free home assessment</div>
+        <div className="eyebrow"><span/> Free home assessment</div>
         <h1>See what your roof could <em>save you.</em></h1>
-        <p className="lede">Your roof, two clear solar options and an estimated payback period — in under 60 seconds.</p>
-        <div className="hero-steps"><div><b>1</b><span><strong>Find your home</strong>Enter your postcode</span></div><i/><div><b>2</b><span><strong>See your roof</strong>Instant solar potential</span></div><i/><div><b>3</b><span><strong>Compare options</strong>Savings & payback</span></div></div>
+        <p className="lede">See your roof&apos;s solar potential, estimated yearly generation and possible electricity bill reduction — in under 60 seconds.</p>
+        <div className="hero-steps"><div><b>1</b><span><strong>Find your home</strong>Enter your postcode</span></div><i/><div><b>2</b><span><strong>See your roof</strong>Estimate panel capacity</span></div><i/><div><b>3</b><span><strong>See your savings</strong>Compare your yearly bill</span></div></div>
         <div className="finder">
           <label htmlFor="postcode">Enter your postcode</label>
           <div className="finder-row"><input id="postcode" value={postcode} onChange={(e) => { setPostcode(e.target.value.toUpperCase()); setSearched(false); }} onKeyDown={(e) => e.key === "Enter" && findHome()} placeholder="e.g. NW4 1HJ"/><button onClick={findHome}>Find my home <span>→</span></button></div>
@@ -77,57 +103,71 @@ export default function Home() {
           <small><span>⌖</span> We use your address to estimate roof size and local energy use.</small>
         </div>
       </div>
-      <div className="hero-visual"><div className="sun-glow"/><RoofGraphic/><div className="potential"><span>Estimated potential</span><strong>14 panels</strong><b>6.37 kWp</b></div></div>
+      <div className="hero-visual"><div className="sun-glow"/><RoofGraphic/><div className="potential"><span>Estimated potential</span><strong>{PANEL.count} panels</strong><b>{estimate.systemKwp.toFixed(2)} kWp</b></div></div>
     </section>
-    <div className="trust-bar"><span>Built for UK homes</span><b>Address-led estimate</b><b>Two clear options</b><b>No obligation</b></div>
+    <div className="trust-bar"><span>Built for UK homes</span><b>490W solar panels</b><b>Address-led estimate</b><b>No product pricing assumed</b></div>
   </main>;
 
   if (stage === "roof") return <main className="app-shell">
-    <nav className="nav"><Brand/><button className="text-button" onClick={() => setStage("find")}>← Change address</button></nav>
+    <nav className="nav"><Brand/><button className="text-button" onClick={() => go("find")}>← Change address</button></nav>
     <Progress stage={stage}/>
     <section className="roof-step">
       <div className="section-heading"><div className="eyebrow"><span/> Step 2 — Your roof</div><h2>We found your home.</h2><p>{address}</p></div>
       <div className="roof-grid">
         <div className="map-wrap"><RoofGraphic/><div className="demo-flag">Demo roof data</div></div>
         <div className="roof-details">
-          <div className="found"><span>✓</span><div><b>Good solar potential</b><small>South & south-west facing roof sections detected</small></div></div>
-          <div className="stat-grid"><div><small>Max. panels</small><strong>14</strong></div><div><small>System potential</small><strong>6.37 <em>kWp</em></strong></div><div><small>Est. generation</small><strong>5,660 <em>kWh/yr</em></strong></div><div><small>Roof type</small><strong>Pitched</strong></div></div>
-          <div className="energy-card"><div><span>Estimated annual electricity use</span><small>Property-adjusted local estimate</small></div>{editingUsage ? <div className="usage-edit"><input type="number" min="1000" max="20000" value={usage} onChange={e => setUsage(Number(e.target.value))}/><span>kWh/year</span><button onClick={() => setEditingUsage(false)}>Use this</button></div> : <div className="usage-value"><strong>{usage.toLocaleString("en-GB")}</strong><span>kWh/year</span><button onClick={() => setEditingUsage(true)}>Edit</button></div>}<p>Based on the home type and typical electricity use near {postcode}. You can replace this with the customer&apos;s actual annual usage.</p></div>
-          <button className="primary full" onClick={() => { setStage("options"); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Show my two solar options <span>→</span></button>
-          <p className="fineprint">Indicative assessment only. Final panel positioning is confirmed after a technical survey.</p>
+          <div className="found"><span>✓</span><div><b>Good solar potential</b><small>Indicative south and south-west facing roof sections</small></div></div>
+          <div className="stat-grid">
+            <div><small>Max. panels</small><strong>{PANEL.count}</strong></div>
+            <div><small>Panel rating</small><strong>{PANEL.watts} <em>W</em></strong></div>
+            <div><small>System potential</small><strong>{estimate.systemKwp.toFixed(2)} <em>kWp</em></strong></div>
+            <div><small>Panel dimensions</small><strong className="compact-stat">{PANEL.height} × {PANEL.width}m</strong></div>
+          </div>
+          <div className="panel-spec"><div><span>Combined panel area</span><b>{estimate.totalPanelArea.toFixed(1)}m²</b></div><div><span>Efficiency from size & rating</span><b>{estimate.efficiency.toFixed(1)}%</b></div></div>
+          <div className="energy-card"><div><span>Estimated annual electricity use</span><small>Property-adjusted local estimate</small></div>{editingUsage ? <div className="usage-edit"><input type="number" min="1000" max="20000" value={usage} onChange={e => setUsage(Math.max(Number(e.target.value), 1))}/><span>kWh/year</span><button onClick={() => setEditingUsage(false)}>Use this</button></div> : <div className="usage-value"><strong>{usage.toLocaleString("en-GB")}</strong><span>kWh/year</span><button onClick={() => setEditingUsage(true)}>Edit</button></div>}<p>Use this estimate or replace it with the customer&apos;s actual annual electricity usage.</p></div>
+          <button className="primary full" onClick={() => go("result")}>Calculate my yearly savings <span>→</span></button>
+          <p className="fineprint">Indicative assessment only. Final roof capacity and annual generation require detailed solar and technical data.</p>
         </div>
       </div>
     </section>
   </main>;
 
-  if (stage === "options") return <main className="app-shell options-bg">
-    <nav className="nav"><Brand/><button className="text-button" onClick={() => setStage("roof")}>← Back to roof</button></nav>
+  if (stage === "result") return <main className="app-shell result-bg">
+    <nav className="nav"><Brand/><button className="text-button" onClick={() => go("roof")}>← Back to roof</button></nav>
     <Progress stage={stage}/>
-    <section className="options-step">
-      <div className="section-heading centered"><div className="eyebrow"><span/> Step 3 — Your options</div><h2>Two smart ways to go solar.</h2><p>One keeps the upfront cost lower. The other gets more from your roof.</p></div>
-      <div className="context-line"><b>{address}</b><span>{usage.toLocaleString("en-GB")} kWh estimated use</span><span>14-panel roof potential</span></div>
-      <div className="plan-grid">
-        {(Object.keys(adjustedPlans) as PlanKey[]).map((key, index) => { const plan = adjustedPlans[key]; return <article className={`plan-card ${index === 0 ? "featured" : ""}`} key={key}>
-          <div className="plan-top"><div><span className="option-label">Option {index + 1}</span><h3>{plan.title}</h3></div><span className="plan-tag">{plan.tag}</span></div>
-          <div className="system-line"><div className="mini-panels">{Array.from({length:index ? 8 : 6}).map((_,i)=><i key={i}/>)}</div><div><strong>{plan.panels} × 455W panels</strong><span>{plan.kwp} kWp solar system</span></div></div>
-          <div className="hardware"><span><b>{plan.battery} kWh</b> battery</span><span><b>{plan.inverter}</b> inverter</span></div>
-          <div className="investment"><small>Indicative investment</small><strong>{money(plan.price)}</strong><span>0% VAT included</span></div>
-          <div className="return-grid"><div><small>Estimated annual saving</small><strong>{money(plan.saving)}</strong><span>per year</span></div><div><small>Estimated annual return</small><strong>{plan.roi.toFixed(1)}%</strong></div><div><small>Indicative payback</small><strong>{plan.payback.toFixed(1)}</strong><span>years</span></div><div><small>25-year estimated benefit</small><strong>{money(plan.benefit)}</strong></div></div>
-          <button className="primary full" onClick={() => book(key)}>Book a free survey for this option <span>→</span></button>
-          <div className="warranty"><span>25 yr panel</span><span>10 yr battery</span><span>5 + 5 yr inverter</span></div>
-        </article>; })}
+    <section className="result-step">
+      <div className="section-heading centered"><div className="eyebrow"><span/> Step 3 — Your savings</div><h2>Your roof could make a real difference.</h2><p>Based on {PANEL.count} × {PANEL.watts}W panels and {usage.toLocaleString("en-GB")} kWh estimated household use.</p></div>
+
+      <div className="result-hero">
+        <div className="generation-block"><span>Estimated annual generation</span><strong>{estimate.generation.toLocaleString("en-GB")}</strong><b>kWh / year</b><small>{estimate.systemKwp.toFixed(2)} kWp system · {estimate.totalPanelArea.toFixed(1)}m² of panels</small></div>
+        <div className="impact-block"><span>Estimated annual benefit</span><strong>{money(estimate.annualBenefit)}</strong><b>per year</b><div className="reduction-ring"><i style={{ "--value": `${estimate.billReduction * 3.6}deg` } as React.CSSProperties}/><span><b>{estimate.billReduction.toFixed(0)}%</b> lower effective electricity cost</span></div></div>
       </div>
-      <p className="assumption">Savings use standard household self-consumption and tariff assumptions. Your full proposal will use actual bills, tariff and detailed technical design.</p>
+
+      <div className="bill-compare">
+        <div className="bill-column before"><div className="bill-title"><span>Today</span><h3>Without solar</h3></div><div className="bill-number"><strong>{money(estimate.currentBill)}</strong><span>estimated annual electricity cost</span></div><div className="bill-lines"><p><span>Grid electricity</span><b>{usage.toLocaleString("en-GB")} kWh</b></p><p><span>Energy charge</span><b>{money(usage * ASSUMPTIONS.importTariff)}</b></p><p><span>Standing charge</span><b>{money(estimate.standingCharge)}</b></p></div></div>
+        <div className="bill-arrow"><span>→</span><small>Solar effect</small></div>
+        <div className="bill-column after"><div className="bill-title"><span>Estimated</span><h3>With solar</h3></div><div className="bill-number"><strong>{money(estimate.effectiveBillAfter)}</strong><span>effective annual cost after export credit</span></div><div className="bill-lines"><p><span>Remaining grid import</span><b>{estimate.gridImportAfter.toLocaleString("en-GB")} kWh</b></p><p><span>Grid bill + standing charge</span><b>{money(estimate.gridBillAfter)}</b></p><p className="credit"><span>Estimated export income</span><b>− {money(estimate.exportIncome)}</b></p></div></div>
+      </div>
+
+      <div className="energy-flow">
+        <div><small>Used directly in your home</small><strong>{estimate.selfConsumed.toLocaleString("en-GB")} kWh</strong><span>{estimate.usageCovered.toFixed(0)}% of household use covered</span></div>
+        <div><small>Sent back to the grid</small><strong>{estimate.exported.toLocaleString("en-GB")} kWh</strong><span>Estimated at {(ASSUMPTIONS.exportTariff * 100).toFixed(0)}p/kWh export rate</span></div>
+        <div><small>Panel specification</small><strong>{PANEL.watts}W · {estimate.efficiency.toFixed(1)}%</strong><span>{PANEL.height}m × {PANEL.width}m per panel</span></div>
+      </div>
+
+      <div className="assumption-box"><b>How this estimate works</b><span>{ASSUMPTIONS.annualYieldPerKwp} kWh/kWp annual solar yield</span><span>{(ASSUMPTIONS.selfUseRate * 100).toFixed(0)}% direct self-use</span><span>{(ASSUMPTIONS.importTariff * 100).toFixed(0)}p/kWh import</span><span>{(ASSUMPTIONS.exportTariff * 100).toFixed(0)}p/kWh export</span><p>No system price, battery, finance, ROI or payback assumptions are included.</p></div>
+      <button className="primary result-cta" onClick={() => go("booking")}>Book a free technical survey <span>→</span></button>
+      <p className="assumption">These figures are illustrative. A detailed survey will confirm usable roof area, shading, orientation and expected generation.</p>
     </section>
   </main>;
 
-  if (stage === "booking") { const plan = adjustedPlans[selectedPlan]; return <main className="app-shell booking-bg">
-    <nav className="nav"><Brand/><button className="text-button" onClick={() => setStage("options")}>← Back to options</button></nav>
+  if (stage === "booking") return <main className="app-shell booking-bg">
+    <nav className="nav"><Brand/><button className="text-button" onClick={() => go("result")}>← Back to results</button></nav>
     <section className="booking-step">
-      <div className="booking-summary"><div className="eyebrow"><span/> Your solar potential</div><h2>Ready for an accurate quote?</h2><p>A free on-site survey confirms your roof, electrical setup and final system design.</p><div className="summary-card"><small>Your selected starting point</small><h3>{plan.title}</h3><div><span>{plan.panels} panels · {plan.kwp} kWp</span><b>{money(plan.price)}</b></div><div><span>Estimated annual saving</span><b>{money(plan.saving)}</b></div><div><span>Indicative payback</span><b>{plan.payback.toFixed(1)} years</b></div></div><p className="address-note">⌖ {address}</p></div>
-      <form className="booking-form" onSubmit={submit}><span className="form-kicker">Free technical survey</span><h3>Where should we contact you?</h3><p>No lengthy form. Just the details we need to arrange your visit.</p><label>Phone number <b>*</b><input required type="tel" placeholder="e.g. 07700 900000" value={form.phone} onChange={e => setForm({...form, phone:e.target.value})}/></label><label>Email address <b>*</b><input required type="email" placeholder="you@example.com" value={form.email} onChange={e => setForm({...form, email:e.target.value})}/></label><label>Preferred survey time <small>Optional</small><input placeholder="e.g. Weekday mornings" value={form.time} onChange={e => setForm({...form, time:e.target.value})}/></label><label className="consent"><input required type="checkbox"/><span>I agree to be contacted about this solar assessment and survey.</span></label><button className="primary full" type="submit">Book my free survey <span>→</span></button><small className="privacy">Your details are used only to arrange your solar consultation.</small></form>
+      <div className="booking-summary"><div className="eyebrow"><span/> Your solar potential</div><h2>Ready to confirm your roof?</h2><p>A free on-site survey confirms roof capacity, shading, electrical setup and a more accurate generation estimate.</p><div className="summary-card"><small>Indicative roof assessment</small><h3>{PANEL.count} × {PANEL.watts}W panels</h3><div><span>System potential</span><b>{estimate.systemKwp.toFixed(2)} kWp</b></div><div><span>Estimated annual generation</span><b>{estimate.generation.toLocaleString("en-GB")} kWh</b></div><div><span>Estimated annual benefit</span><b>{money(estimate.annualBenefit)}</b></div></div><p className="address-note">⌖ {address}</p></div>
+      <form className="booking-form" onSubmit={submit}><span className="form-kicker">Free technical survey</span><h3>Where should we contact you?</h3><p>No lengthy form. Just the details needed to arrange your visit.</p><label>Phone number <b>*</b><input required type="tel" placeholder="e.g. 07700 900000" value={form.phone} onChange={e => setForm({...form, phone:e.target.value})}/></label><label>Email address <b>*</b><input required type="email" placeholder="you@example.com" value={form.email} onChange={e => setForm({...form, email:e.target.value})}/></label><label>Preferred survey time <small>Optional</small><input placeholder="e.g. Weekday mornings" value={form.time} onChange={e => setForm({...form, time:e.target.value})}/></label><label className="consent"><input required type="checkbox"/><span>I agree to be contacted about this solar assessment and survey.</span></label><button className="primary full" type="submit">Book my free survey <span>→</span></button><small className="privacy">Your details are used only to arrange your solar consultation.</small></form>
     </section>
-  </main>; }
+  </main>;
 
-  return <main className="complete"><div className="complete-mark">✓</div><div className="eyebrow"><span/> Survey request received</div><h2>Your roof is one step closer.</h2><p>We&apos;ll contact you using the details provided to arrange the free technical survey for:</p><strong>{address}</strong><div className="next-steps"><div><b>1</b><span><strong>We call or email</strong>Confirm a suitable appointment</span></div><div><b>2</b><span><strong>Technical survey</strong>Check the roof and electrical setup</span></div><div><b>3</b><span><strong>Your accurate proposal</strong>Final design, savings and price</span></div></div><button className="secondary" onClick={() => window.location.reload()}>Start another assessment</button><small>This is a demo — no information has been sent.</small></main>;
+  return <main className="complete"><div className="complete-mark">✓</div><div className="eyebrow"><span/> Survey request received</div><h2>Your roof is one step closer.</h2><p>We&apos;ll contact you using the details provided to arrange the free technical survey for:</p><strong>{address}</strong><div className="next-steps"><div><b>1</b><span><strong>We call or email</strong>Confirm a suitable appointment</span></div><div><b>2</b><span><strong>Technical survey</strong>Check roof capacity and shading</span></div><div><b>3</b><span><strong>Your accurate assessment</strong>Confirm generation, savings and options</span></div></div><button className="secondary" onClick={() => window.location.reload()}>Start another assessment</button><small>This is a demo — no information has been sent.</small></main>;
 }
