@@ -118,10 +118,15 @@ export default function Home() {
       setLoadingLookup(true);
       setLookupError("");
       try {
-        const response = await fetch(`/api/assessment?postcode=${encodeURIComponent(compact)}`, { signal: controller.signal });
+        const response = await fetch(`/api/assessment?postcode=${encodeURIComponent(compact)}`, { signal: controller.signal, cache: "no-store" });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "Unable to load postcode data.");
-        const data = payload as Lookup;
+        const raw = payload as Lookup & { addressLookup: { configured: boolean; addresses: Array<AddressOption | string> } };
+        const addresses = raw.addressLookup.addresses.flatMap((item) => {
+          if (typeof item === "string") return item.trim() ? [{ formatted: item, latitude: raw.latitude, longitude: raw.longitude }] : [];
+          return item?.formatted?.trim() ? [item] : [];
+        });
+        const data: Lookup = { ...raw, addressLookup: { ...raw.addressLookup, addresses } };
         setLookup(data);
         setPostcode(data.postcode);
         setSearched(true);

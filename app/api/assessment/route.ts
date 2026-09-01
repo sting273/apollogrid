@@ -137,5 +137,5 @@ export async function GET(request: Request) {
     district: locationPayload.result.admin_district,
     electricity: electricity ? { ...electricity, year: 2024, source: "DESNZ" } : null,
     addressLookup,
-  }, { headers: { "Cache-Control": addressLookup.configured ? "private, max-age=300" : "public, max-age=86400, s-maxage=604800" } });
+  }, { headers: { "Cache-Control": addressLookup.configured ? "private, no-store" : "public, max-age=86400, s-maxage=604800" } });
 }

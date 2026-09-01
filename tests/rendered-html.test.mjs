@@ -38,4 +38,6 @@ test("keeps third-party credentials on server routes", async () => {
   assert.match(assessmentRoute, /process\.env\.IDEAL_POSTCODES_API_KEY/);
   assert.match(solarRoute, /process\.env\.GOOGLE_MAPS_API_KEY/);
   assert.match(solarRoute, /requiredQuality: "BASE"/);
+  assert.match(page, /typeof item === "string"/);
+  assert.match(assessmentRoute, /private, no-store/);
 });
