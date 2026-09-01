@@ -1,11 +1,13 @@
 const DESNZ_CSV = "https://assets.publishing.service.gov.uk/media/694282a1fdbd8404f9e1f1da/Postcode_level_all_meters_electricity_2024.csv";
 const DESNZ_CSV_BYTES = 80_494_341;
+const MINIMUM_REFERENCE_KWH = 2_000;
 
 type ElectricityRow = {
   meters: number;
   meanKwh: number;
   medianKwh: number;
-  scope: "postcode" | "outcode";
+  scope: "postcode" | "outcode" | "baseline";
+  fallbackReason: null | "missing_postcode" | "postcode_below_minimum" | "outcode_below_minimum";
 };
 
 function normalisePostcode(value: string) {
@@ -17,23 +19,24 @@ function compare(a: string, b: string) {
   return a === b ? 0 : a < b ? -1 : 1;
 }
 
-async function rowAfterByte(byte: number) {
-  const end = Math.min(byte + 8_191, DESNZ_CSV_BYTES - 1);
+async function rowAtByte(byte: number) {
+  const start = Math.max(0, byte - 512);
+  const end = Math.min(byte + 4_095, DESNZ_CSV_BYTES - 1);
   const response = await fetch(DESNZ_CSV, {
-    headers: { Range: `bytes=${byte}-${end}` },
+    headers: { Range: `bytes=${start}-${end}` },
   });
   if (!response.ok && response.status !== 206) throw new Error("DESNZ data unavailable");
 
   const text = await response.text();
-  const lineStart = byte === 0 ? 0 : text.indexOf("\n") + 1;
-  if (lineStart <= 0 || lineStart >= text.length) return null;
-  const lineEnd = text.indexOf("\n", lineStart);
+  const relativeByte = byte - start;
+  const lineStart = start === 0 && relativeByte === 0 ? 0 : text.lastIndexOf("\n", relativeByte - 1) + 1;
+  const lineEnd = text.indexOf("\n", relativeByte);
   if (lineEnd < 0) return null;
 
   return {
     line: text.slice(lineStart, lineEnd).replace(/\r$/, ""),
-    start: byte + lineStart,
-    end: byte + lineEnd + 1,
+    start: start + lineStart,
+    end: start + lineEnd + 1,
   };
 }
 
@@ -42,7 +45,7 @@ async function lookupDesnzRow(targetOutcode: string, targetPostcode: string | nu
   let high = DESNZ_CSV_BYTES - 1;
 
   for (let attempt = 0; attempt < 32 && low <= high; attempt += 1) {
-    const row = await rowAfterByte(Math.floor((low + high) / 2));
+    const row = await rowAtByte(Math.floor((low + high) / 2));
     if (!row) break;
     const [outcode, rowPostcode, meters, , mean, median] = row.line.split(",");
     if (!outcode || !rowPostcode) break;
@@ -68,9 +71,26 @@ async function lookupDesnzRow(targetOutcode: string, targetPostcode: string | nu
 async function lookupElectricity(postcode: string): Promise<ElectricityRow | null> {
   const outcode = postcode.split(" ")[0];
   const postcodeRow = await lookupDesnzRow(outcode, postcode);
-  if (postcodeRow) return { ...postcodeRow, scope: "postcode" };
+  if (postcodeRow && postcodeRow.medianKwh >= MINIMUM_REFERENCE_KWH) {
+    return { ...postcodeRow, scope: "postcode", fallbackReason: null };
+  }
   const outcodeRow = await lookupDesnzRow(outcode, null);
-  return outcodeRow ? { ...outcodeRow, scope: "outcode" } : null;
+  if (outcodeRow && outcodeRow.medianKwh >= MINIMUM_REFERENCE_KWH) {
+    return {
+      ...outcodeRow,
+      scope: "outcode",
+      fallbackReason: postcodeRow ? "postcode_below_minimum" : "missing_postcode",
+    };
+  }
+  if (outcodeRow) {
+    return {
+      ...outcodeRow,
+      medianKwh: MINIMUM_REFERENCE_KWH,
+      scope: "baseline",
+      fallbackReason: "outcode_below_minimum",
+    };
+  }
+  return null;
 }
 
 async function lookupAddresses(postcode: string) {
