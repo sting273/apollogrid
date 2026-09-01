@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import SolarRoofMap from "./SolarRoofMap";
 
 type Stage = "find" | "roof" | "result" | "booking" | "complete";
 
@@ -41,6 +42,14 @@ type SolarData = {
   roofAzimuthDegrees: number | null;
   imageryQuality: "HIGH" | "MEDIUM" | "BASE";
   imageryDate: { year?: number; month?: number; day?: number } | null;
+  imageryUrl: string;
+  imageryCenter: { latitude: number; longitude: number };
+  panels: Array<{
+    center: { latitude: number; longitude: number };
+    orientation: "LANDSCAPE" | "PORTRAIT";
+    azimuthDegrees: number;
+    yearlyEnergyDcKwh: number | null;
+  }>;
 };
 
 const money = (value: number) => new Intl.NumberFormat("en-GB", {
@@ -200,7 +209,7 @@ export default function Home() {
     <section className="roof-step">
       <div className="section-heading"><div className="eyebrow"><span/> Step 2 — Your roof</div><h2>We found your home.</h2><p>{address}</p></div>
       <div className="roof-grid">
-        <div className="map-wrap"><RoofGraphic panels={estimate.panelCount} label={address.split(",")[0]}/><div className="demo-flag">{solar ? `Google Solar · ${solar.imageryQuality}` : "Indicative roof data"}</div></div>
+        <div className="map-wrap">{solar?.imageryUrl && solar.panels.length ? <SolarRoofMap imageryUrl={solar.imageryUrl} panels={solar.panels} panelCount={estimate.panelCount} label={address.split(",")[0]}/> : <RoofGraphic panels={estimate.panelCount} label={address.split(",")[0]}/>}<div className="demo-flag">{solar ? `Google Solar · ${solar.imageryQuality}` : "Indicative roof data"}</div></div>
         <div className="roof-details">
           <div className="found"><span>✓</span><div><b>{solar ? "Building-level solar data found" : "Indicative solar potential"}</b><small>{solar ? `${solar.roofAreaMeters2?.toFixed(0) ?? "—"}m² roof · ${solar.maxSunshineHoursPerYear?.toFixed(0) ?? "—"} peak sunshine hours/year` : roofError || "Google Solar data was unavailable; fallback assumptions are shown."}</small></div></div>
           <div className="stat-grid">

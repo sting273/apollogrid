@@ -15,6 +15,9 @@
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
+    "geotiff": "^3.0.5",
+    "geotiff-geokeys-to-proj4": "^2026.8.16",
+    "proj4": "^2.22.0",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },

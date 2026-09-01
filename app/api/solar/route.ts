@@ -2,6 +2,7 @@ const PANEL_WATTS = 490;
 const PANEL_AREA_METERS2 = 1.8 * 1.13;
 
 type GoogleSolarResponse = {
+  center?: { latitude?: number; longitude?: number };
   imageryQuality?: "HIGH" | "MEDIUM" | "BASE";
   imageryDate?: { year?: number; month?: number; day?: number };
   solarPotential?: {
@@ -14,6 +15,12 @@ type GoogleSolarResponse = {
     wholeRoofStats?: { areaMeters2?: number };
     solarPanelConfigs?: Array<{ panelsCount?: number; yearlyEnergyDcKwh?: number }>;
     roofSegmentStats?: Array<{ pitchDegrees?: number; azimuthDegrees?: number; stats?: { areaMeters2?: number } }>;
+    solarPanels?: Array<{
+      center?: { latitude?: number; longitude?: number };
+      orientation?: "LANDSCAPE" | "PORTRAIT";
+      yearlyEnergyDcKwh?: number;
+      segmentIndex?: number;
+    }>;
   };
   error?: { message?: string; status?: string };
 };
@@ -58,6 +65,18 @@ export async function GET(request: Request) {
   const maxByArea = Math.floor((potential.maxArrayAreaMeters2 ?? 0) / PANEL_AREA_METERS2);
   const maxPanels = Math.max(1, Math.min(potential.maxArrayPanelsCount ?? maxByArea, maxByArea || potential.maxArrayPanelsCount || 1));
   const dominantRoof = (potential.roofSegmentStats ?? []).reduce<RoofSegment | null>((best, item) => !best || (item.stats?.areaMeters2 ?? 0) > (best.stats?.areaMeters2 ?? 0) ? item : best, null);
+  const panels = (potential.solarPanels ?? []).slice(0, maxPanels).flatMap((panel) => {
+    const panelLatitude = Number(panel.center?.latitude);
+    const panelLongitude = Number(panel.center?.longitude);
+    if (!Number.isFinite(panelLatitude) || !Number.isFinite(panelLongitude)) return [];
+    const roofSegment = potential.roofSegmentStats?.[panel.segmentIndex ?? -1];
+    return [{
+      center: { latitude: panelLatitude, longitude: panelLongitude },
+      orientation: panel.orientation ?? "PORTRAIT",
+      azimuthDegrees: roofSegment?.azimuthDegrees ?? 0,
+      yearlyEnergyDcKwh: panel.yearlyEnergyDcKwh ?? null,
+    }];
+  });
 
   return Response.json({
     matched: true,
@@ -71,5 +90,11 @@ export async function GET(request: Request) {
     roofAzimuthDegrees: dominantRoof?.azimuthDegrees ?? null,
     imageryQuality: payload.imageryQuality ?? "BASE",
     imageryDate: payload.imageryDate ?? null,
+    imageryUrl: `/api/solar/imagery?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`,
+    imageryCenter: {
+      latitude: Number(payload.center?.latitude) || latitude,
+      longitude: Number(payload.center?.longitude) || longitude,
+    },
+    panels,
   }, { headers: { "Cache-Control": "private, no-store" } });
 }

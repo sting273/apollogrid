@@ -27,10 +27,12 @@ test("server-renders the APOLLOGRID assessment", async () => {
 });
 
 test("keeps third-party credentials on server routes", async () => {
-  const [page, assessmentRoute, solarRoute] = await Promise.all([
+  const [page, assessmentRoute, solarRoute, imageryRoute, roofMap] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/assessment/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/solar/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/solar/imagery/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/SolarRoofMap.tsx", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /fetch\(`\/api\/solar\?lat=/);
@@ -38,6 +40,10 @@ test("keeps third-party credentials on server routes", async () => {
   assert.match(assessmentRoute, /process\.env\.IDEAL_POSTCODES_API_KEY/);
   assert.match(solarRoute, /process\.env\.GOOGLE_MAPS_API_KEY/);
   assert.match(solarRoute, /requiredQuality: "BASE"/);
+  assert.match(imageryRoute, /dataLayers:get/);
+  assert.match(imageryRoute, /IMAGERY_LAYERS/);
+  assert.match(roofMap, /import\("geotiff"\)/);
+  assert.match(roofMap, /panels\.slice\(0, panelCount\)/);
   assert.match(page, /typeof item === "string"/);
   assert.match(assessmentRoute, /private, no-store/);
 });
