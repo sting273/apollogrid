@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type Stage = "find" | "roof" | "result" | "booking" | "complete";
 
@@ -19,12 +19,13 @@ const ASSUMPTIONS = {
   standingChargePerDay: 0.55,
 };
 
-const addresses = [
-  "2 Garrick Drive, London NW4 1HJ",
-  "4 Garrick Drive, London NW4 1HJ",
-  "6 Garrick Drive, London NW4 1HJ",
-  "8 Garrick Drive, London NW4 1HJ",
-];
+type Lookup = {
+  postcode: string;
+  region: string | null;
+  district: string | null;
+  electricity: null | { meters: number; meanKwh: number; medianKwh: number; year: number; source: string; scope: "postcode" | "outcode" };
+  addressLookup: { configured: boolean; addresses: string[] };
+};
 
 const money = (value: number) => new Intl.NumberFormat("en-GB", {
   style: "currency",
@@ -43,9 +44,9 @@ function Progress({ stage }: { stage: Stage }) {
   </div>;
 }
 
-function RoofGraphic({ panels = PANEL.count }: { panels?: number }) {
+function RoofGraphic({ panels = PANEL.count, label = "Your postcode area" }: { panels?: number; label?: string }) {
   return <div className="roof-scene" aria-label={`Illustrative roof with ${panels} solar panels`}>
-    <div className="roof-label"><span>●</span> Roof found<br/><b>6 Garrick Drive</b></div>
+    <div className="roof-label"><span>●</span> Roof location<br/><b>{label}</b></div>
     <div className="compass">N<br/><span>↑</span></div>
     <div className="roof-shape">{Array.from({ length: panels }).map((_, i) => <span className="panel" key={i} />)}</div>
     <div className="map-tag">Indicative roof preview</div>
@@ -56,8 +57,13 @@ export default function Home() {
   const [stage, setStage] = useState<Stage>("find");
   const [postcode, setPostcode] = useState("NW4 1HJ");
   const [searched, setSearched] = useState(false);
-  const [address, setAddress] = useState("6 Garrick Drive, London NW4 1HJ");
+  const [lookup, setLookup] = useState<Lookup | null>(null);
+  const [lookupError, setLookupError] = useState("");
+  const [loadingLookup, setLoadingLookup] = useState(false);
+  const [premise, setPremise] = useState("");
+  const [address, setAddress] = useState("NW4 1HJ");
   const [usage, setUsage] = useState(5000);
+  const [usageSource, setUsageSource] = useState<"desnz" | "manual" | "fallback">("fallback");
   const [editingUsage, setEditingUsage] = useState(false);
   const [form, setForm] = useState({ phone: "", email: "", time: "" });
 
@@ -83,7 +89,48 @@ export default function Home() {
     return { panelArea, totalPanelArea, efficiency, systemKwp, generation, selfConsumed, exported, gridImportAfter, standingCharge, currentBill, gridBillAfter, exportIncome, effectiveBillAfter, annualBenefit, billReduction, usageCovered };
   }, [usage]);
 
-  const findHome = () => { if (postcode.trim()) setSearched(true); };
+  useEffect(() => {
+    const compact = postcode.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (!/^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/.test(compact)) {
+      setLookup(null);
+      setSearched(false);
+      setLookupError("");
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setLoadingLookup(true);
+      setLookupError("");
+      try {
+        const response = await fetch(`/api/assessment?postcode=${encodeURIComponent(compact)}`, { signal: controller.signal });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Unable to load postcode data.");
+        const data = payload as Lookup;
+        setLookup(data);
+        setPostcode(data.postcode);
+        setSearched(true);
+        setPremise("");
+        if (data.electricity?.medianKwh) {
+          setUsage(Math.round(data.electricity.medianKwh));
+          setUsageSource("desnz");
+        } else {
+          setUsage(5000);
+          setUsageSource("fallback");
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setLookup(null);
+          setSearched(false);
+          setLookupError(error instanceof Error ? error.message : "Unable to load postcode data.");
+        }
+      } finally {
+        if (!controller.signal.aborted) setLoadingLookup(false);
+      }
+    }, 550);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [postcode]);
+
+  const findHome = () => { if (lookup) setSearched(true); };
   const chooseAddress = (item: string) => { setAddress(item); setStage("roof"); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const go = (next: Stage) => { setStage(next); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const submit = (e: FormEvent) => { e.preventDefault(); go("complete"); };
@@ -98,12 +145,13 @@ export default function Home() {
         <div className="hero-steps"><div><b>1</b><span><strong>Find your home</strong>Enter your postcode</span></div><i/><div><b>2</b><span><strong>See your roof</strong>Estimate panel capacity</span></div><i/><div><b>3</b><span><strong>See your savings</strong>Compare your yearly bill</span></div></div>
         <div className="finder">
           <label htmlFor="postcode">Enter your postcode</label>
-          <div className="finder-row"><input id="postcode" value={postcode} onChange={(e) => { setPostcode(e.target.value.toUpperCase()); setSearched(false); }} onKeyDown={(e) => e.key === "Enter" && findHome()} placeholder="e.g. NW4 1HJ"/><button onClick={findHome}>Find my home <span>→</span></button></div>
-          {searched && <div className="address-list"><p>Select your address</p>{addresses.map(item => <button key={item} onClick={() => chooseAddress(item)}><span>{item}</span><b>→</b></button>)}</div>}
-          <small><span>⌖</span> We use your address to estimate roof size and local energy use.</small>
+          <div className="finder-row"><input id="postcode" value={postcode} onChange={(e) => { setPostcode(e.target.value.toUpperCase()); setSearched(false); }} onKeyDown={(e) => e.key === "Enter" && findHome()} placeholder="e.g. NW4 1HJ"/><button onClick={findHome} disabled={!lookup || loadingLookup}>{loadingLookup ? "Loading…" : "Find my home"} <span>→</span></button></div>
+          {lookupError && <div className="lookup-error">{lookupError}</div>}
+          {searched && lookup && <div className="address-list"><p>{lookup.addressLookup.addresses.length ? "Select your address" : `Address in ${lookup.postcode}`}</p>{lookup.addressLookup.addresses.length ? lookup.addressLookup.addresses.map(item => <button key={item} onClick={() => chooseAddress(item)}><span>{item}</span><b>→</b></button>) : <div className="manual-address"><label htmlFor="premise">House number or name</label><div><input id="premise" value={premise} onChange={e => setPremise(e.target.value)} placeholder="e.g. 6 Garrick Drive"/><button disabled={!premise.trim()} onClick={() => chooseAddress(`${premise.trim()}, ${lookup.postcode}`)}>Continue →</button></div><small>{lookup.addressLookup.configured ? "No delivery addresses were returned for this postcode." : "Automatic address lists require a Royal Mail PAF address-data connection."}</small></div>}</div>}
+          <small><span>⌖</span> Postcode electricity use comes from DESNZ 2024 official statistics.</small>
         </div>
       </div>
-      <div className="hero-visual"><div className="sun-glow"/><RoofGraphic/><div className="potential"><span>Estimated potential</span><strong>{PANEL.count} panels</strong><b>{estimate.systemKwp.toFixed(2)} kWp</b></div></div>
+      <div className="hero-visual"><div className="sun-glow"/><RoofGraphic label={lookup?.postcode ?? postcode}/><div className="potential"><span>Estimated potential</span><strong>{PANEL.count} panels</strong><b>{estimate.systemKwp.toFixed(2)} kWp</b></div></div>
     </section>
     <div className="trust-bar"><span>Built for UK homes</span><b>490W solar panels</b><b>Address-led estimate</b><b>No product pricing assumed</b></div>
   </main>;
@@ -114,7 +162,7 @@ export default function Home() {
     <section className="roof-step">
       <div className="section-heading"><div className="eyebrow"><span/> Step 2 — Your roof</div><h2>We found your home.</h2><p>{address}</p></div>
       <div className="roof-grid">
-        <div className="map-wrap"><RoofGraphic/><div className="demo-flag">Demo roof data</div></div>
+        <div className="map-wrap"><RoofGraphic label={address.split(",")[0]}/><div className="demo-flag">Indicative roof data</div></div>
         <div className="roof-details">
           <div className="found"><span>✓</span><div><b>Good solar potential</b><small>Indicative south and south-west facing roof sections</small></div></div>
           <div className="stat-grid">
@@ -124,7 +172,7 @@ export default function Home() {
             <div><small>Panel dimensions</small><strong className="compact-stat">{PANEL.height} × {PANEL.width}m</strong></div>
           </div>
           <div className="panel-spec"><div><span>Combined panel area</span><b>{estimate.totalPanelArea.toFixed(1)}m²</b></div><div><span>Efficiency from size & rating</span><b>{estimate.efficiency.toFixed(1)}%</b></div></div>
-          <div className="energy-card"><div><span>Estimated annual electricity use</span><small>Property-adjusted local estimate</small></div>{editingUsage ? <div className="usage-edit"><input type="number" min="1000" max="20000" value={usage} onChange={e => setUsage(Math.max(Number(e.target.value), 1))}/><span>kWh/year</span><button onClick={() => setEditingUsage(false)}>Use this</button></div> : <div className="usage-value"><strong>{usage.toLocaleString("en-GB")}</strong><span>kWh/year</span><button onClick={() => setEditingUsage(true)}>Edit</button></div>}<p>Use this estimate or replace it with the customer&apos;s actual annual electricity usage.</p></div>
+          <div className="energy-card"><div><span>Estimated annual electricity use</span><small>{usageSource === "desnz" && lookup?.electricity ? `${lookup.electricity.scope === "postcode" ? lookup.postcode : `${lookup.postcode.split(" ")[0]} area`} median · DESNZ ${lookup.electricity.year} · ${lookup.electricity.meters.toLocaleString("en-GB")} meters` : usageSource === "manual" ? "Customer-provided figure" : "National fallback estimate"}</small></div>{editingUsage ? <div className="usage-edit"><input type="number" min="1000" max="30000" value={usage} onChange={e => setUsage(Math.max(Number(e.target.value), 1))}/><span>kWh/year</span><button onClick={() => { setEditingUsage(false); setUsageSource("manual"); }}>Use this</button></div> : <div className="usage-value"><strong>{usage.toLocaleString("en-GB")}</strong><span>kWh/year</span><button onClick={() => setEditingUsage(true)}>Edit</button></div>}<p>{usageSource === "desnz" && lookup?.electricity && lookup.electricity.scope === "postcode" && lookup.electricity.meters < 10 ? "Small postcode sample: use the customer’s actual bill where available." : lookup?.electricity?.scope === "outcode" ? "No postcode row was published, so the wider postcode-area median is used." : "Use this local estimate or replace it with the customer’s actual annual electricity usage."}</p></div>
           <button className="primary full" onClick={() => go("result")}>Calculate my yearly savings <span>→</span></button>
           <p className="fineprint">Indicative assessment only. Final roof capacity and annual generation require detailed solar and technical data.</p>
         </div>
