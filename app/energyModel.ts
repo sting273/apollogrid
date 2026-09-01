@@ -62,31 +62,39 @@ export type EnergySimulation = {
   solarSelfConsumedKwh: number;
   solarSelfUseRate: number;
   batteryToHomeKwh: number;
+  batterySolarToHomeKwh: number;
+  batteryGridToHomeKwh: number;
   batteryGridChargeKwh: number;
   exportKwh: number;
   exportIncome: number;
   gridImportKwh: number;
   householdCoverage: number;
+  renewableCoverage: number;
+  gridShiftCoverage: number;
   standingCharge: number;
 };
 
-export type ProjectionPoint = { year: number; before: number; after: number };
+export type ProjectionPoint = { year: number; before: number; solarOnly: number; solarBattery: number };
 
 type SimulationOptions = {
   annualUsageKwh: number;
   annualGenerationKwh: number;
+  batteryEnabled?: boolean;
   importMultiplier?: number;
   standingMultiplier?: number;
 };
 
-export function simulateEnergy({ annualUsageKwh, annualGenerationKwh, importMultiplier = 1, standingMultiplier = 1 }: SimulationOptions): EnergySimulation {
+export function simulateEnergy({ annualUsageKwh, annualGenerationKwh, batteryEnabled = true, importMultiplier = 1, standingMultiplier = 1 }: SimulationOptions): EnergySimulation {
   const chargeEfficiency = Math.sqrt(ENERGY_MODEL.batteryRoundTripEfficiency);
   const dischargeEfficiency = chargeEfficiency;
   const slotPowerKwh = ENERGY_MODEL.batteryPowerKw / 2;
-  let batteryKwh = ENERGY_MODEL.batteryCapacityKwh;
+  let batterySolarKwh = 0;
+  let batteryGridKwh = 0;
   let directSolarKwh = 0;
   let solarToBatteryKwh = 0;
   let batteryToHomeKwh = 0;
+  let batterySolarToHomeKwh = 0;
+  let batteryGridToHomeKwh = 0;
   let batteryGridChargeKwh = 0;
   let exportKwh = 0;
   let gridImportKwh = 0;
@@ -121,28 +129,36 @@ export function simulateEnergy({ annualUsageKwh, annualGenerationKwh, importMult
         let remainingLoad = load - direct;
         let excessSolar = solar - direct;
 
-        if (excessSolar > 0) {
-          const storageRoom = ENERGY_MODEL.batteryCapacityKwh - batteryKwh;
+        if (excessSolar > 0 && batteryEnabled) {
+          const storageRoom = ENERGY_MODEL.batteryCapacityKwh - batterySolarKwh - batteryGridKwh;
           const solarInput = Math.min(excessSolar, slotPowerKwh, storageRoom / chargeEfficiency);
-          batteryKwh += solarInput * chargeEfficiency;
+          batterySolarKwh += solarInput * chargeEfficiency;
           solarToBatteryKwh += solarInput;
           excessSolar -= solarInput;
           exportKwh += excessSolar;
           monthExport += excessSolar;
         }
 
-        if (remainingLoad > 0 && !offPeak) {
-          const dischargeToHome = Math.min(remainingLoad, slotPowerKwh, batteryKwh * dischargeEfficiency);
-          batteryKwh -= dischargeToHome / dischargeEfficiency;
+        if (remainingLoad > 0 && !offPeak && batteryEnabled) {
+          const storedBefore = batterySolarKwh + batteryGridKwh;
+          const dischargeToHome = Math.min(remainingLoad, slotPowerKwh, storedBefore * dischargeEfficiency);
+          const storedEnergyUsed = dischargeToHome / dischargeEfficiency;
+          const solarShare = storedBefore > 0 ? batterySolarKwh / storedBefore : 0;
+          const solarStoredUsed = storedEnergyUsed * solarShare;
+          const gridStoredUsed = storedEnergyUsed - solarStoredUsed;
+          batterySolarKwh = Math.max(batterySolarKwh - solarStoredUsed, 0);
+          batteryGridKwh = Math.max(batteryGridKwh - gridStoredUsed, 0);
           batteryToHomeKwh += dischargeToHome;
+          batterySolarToHomeKwh += dischargeToHome * solarShare;
+          batteryGridToHomeKwh += dischargeToHome * (1 - solarShare);
           remainingLoad -= dischargeToHome;
         }
 
         let intervalGridImport = remainingLoad;
-        if (offPeak && batteryKwh < ENERGY_MODEL.batteryCapacityKwh) {
-          const storageRoom = ENERGY_MODEL.batteryCapacityKwh - batteryKwh;
+        if (offPeak && batteryEnabled && batterySolarKwh + batteryGridKwh < ENERGY_MODEL.batteryCapacityKwh) {
+          const storageRoom = ENERGY_MODEL.batteryCapacityKwh - batterySolarKwh - batteryGridKwh;
           const gridCharge = Math.min(slotPowerKwh, storageRoom / chargeEfficiency);
-          batteryKwh += gridCharge * chargeEfficiency;
+          batteryGridKwh += gridCharge * chargeEfficiency;
           intervalGridImport += gridCharge;
           batteryGridChargeKwh += gridCharge;
         }
@@ -182,11 +198,15 @@ export function simulateEnergy({ annualUsageKwh, annualGenerationKwh, importMult
     solarSelfConsumedKwh,
     solarSelfUseRate: annualGenerationKwh > 0 ? solarSelfConsumedKwh / annualGenerationKwh * 100 : 0,
     batteryToHomeKwh,
+    batterySolarToHomeKwh,
+    batteryGridToHomeKwh,
     batteryGridChargeKwh,
     exportKwh,
     exportIncome: exportKwh * ENERGY_MODEL.exportRate,
     gridImportKwh,
     householdCoverage: annualUsageKwh > 0 ? Math.min((directSolarKwh + batteryToHomeKwh) / annualUsageKwh * 100, 100) : 0,
+    renewableCoverage: annualUsageKwh > 0 ? Math.min((directSolarKwh + batterySolarToHomeKwh) / annualUsageKwh * 100, 100) : 0,
+    gridShiftCoverage: annualUsageKwh > 0 ? Math.min(batteryGridToHomeKwh / annualUsageKwh * 100, 100) : 0,
     standingCharge: 365 * ENERGY_MODEL.standingChargePerDay,
   };
 }
@@ -195,12 +215,14 @@ export function buildThirtyYearProjection(annualUsageKwh: number, annualGenerati
   return Array.from({ length: 30 }, (_, index) => {
     const productionFactor = index === 0 ? 1 : Math.max(ENERGY_MODEL.firstYearProductionFactor - ENERGY_MODEL.annualDegradation * (index - 1), 0);
     const inflationMultiplier = (1 + ENERGY_MODEL.utilityInflation) ** index;
-    const result = simulateEnergy({
+    const shared = {
       annualUsageKwh,
       annualGenerationKwh: annualGenerationKwh * productionFactor,
       importMultiplier: inflationMultiplier,
       standingMultiplier: inflationMultiplier,
-    });
-    return { year: index + 1, before: result.annualBillBefore, after: result.annualBillAfter };
+    };
+    const solarOnly = simulateEnergy({ ...shared, batteryEnabled: false });
+    const solarBattery = simulateEnergy({ ...shared, batteryEnabled: true });
+    return { year: index + 1, before: solarOnly.annualBillBefore, solarOnly: solarOnly.annualBillAfter, solarBattery: solarBattery.annualBillAfter };
   });
 }
