@@ -1,4 +1,5 @@
 export const ENERGY_MODEL = {
+  deliveredEnergyFactor: 0.90,
   dayImportRate: 0.28,
   offPeakImportRate: 0.07,
   exportRate: 0.15,

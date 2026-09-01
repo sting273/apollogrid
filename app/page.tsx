@@ -128,11 +128,12 @@ export default function Home() {
     const totalPanelArea = panelArea * panelCount;
     const efficiency = PANEL.watts / (panelArea * 1000) * 100;
     const systemKwp = PANEL.watts * panelCount / 1000;
-    const generation = Math.round(systemKwp * annualYieldPerKwp);
-    const energy = simulateEnergy({ annualUsageKwh: usage, annualGenerationKwh: generation });
-    const projection = buildThirtyYearProjection(usage, generation);
+    const dcGeneration = Math.round(systemKwp * annualYieldPerKwp);
+    const deliveredGeneration = Math.round(dcGeneration * ENERGY_MODEL.deliveredEnergyFactor);
+    const energy = simulateEnergy({ annualUsageKwh: usage, annualGenerationKwh: deliveredGeneration });
+    const projection = buildThirtyYearProjection(usage, deliveredGeneration);
 
-    return { panelArea, panelCount, annualYieldPerKwp, totalPanelArea, efficiency, systemKwp, generation, energy, projection };
+    return { panelArea, panelCount, annualYieldPerKwp, totalPanelArea, efficiency, systemKwp, dcGeneration, deliveredGeneration, energy, projection };
   }, [usage, solar]);
 
   useEffect(() => {
@@ -250,7 +251,7 @@ export default function Home() {
       <div className="section-heading centered"><div className="eyebrow"><span/> Step 3 — Your savings</div><h2>Your roof could make a real difference.</h2><p>Based on {estimate.panelCount} × {PANEL.watts}W panels and {usage.toLocaleString("en-GB")} kWh estimated household use.</p></div>
 
       <div className="result-hero">
-        <div className="generation-block"><span>Estimated annual generation</span><strong>{estimate.generation.toLocaleString("en-GB")}</strong><b>kWh / year</b><small>{estimate.systemKwp.toFixed(2)} kWp system · {estimate.totalPanelArea.toFixed(1)}m² of panels</small></div>
+        <div className="generation-block"><span>Estimated usable annual generation</span><strong>{estimate.deliveredGeneration.toLocaleString("en-GB")}</strong><b>kWh / year</b><small>{estimate.dcGeneration.toLocaleString("en-GB")} kWh DC estimate × {(ENERGY_MODEL.deliveredEnergyFactor * 100).toFixed(0)}% delivered-energy factor</small></div>
         <div className="impact-block"><span>Estimated annual benefit</span><strong>{money(estimate.energy.annualBenefit)}</strong><b>per year</b><div className="reduction-ring"><i style={{ "--value": `${Math.max(0, Math.min(estimate.energy.billReduction, 100)) * 3.6}deg` } as React.CSSProperties}/><span><b>{estimate.energy.billReduction.toFixed(0)}%</b> lower effective electricity cost</span></div></div>
       </div>
 
@@ -273,7 +274,7 @@ export default function Home() {
         <div><small>Sent back to the grid</small><strong>{Math.round(estimate.energy.exportKwh).toLocaleString("en-GB")} kWh</strong><span>Estimated at {(ENERGY_MODEL.exportRate * 100).toFixed(0)}p/kWh export rate</span></div>
       </div>
 
-      <div className="assumption-box"><b>Pylon-style half-hour model</b><span>{estimate.annualYieldPerKwp} kWh/kWp {solar ? "Google Solar building yield" : "fallback annual yield"}</span><span>{ENERGY_MODEL.batteryCapacityKwh} kWh battery · {(ENERGY_MODEL.batteryRoundTripEfficiency * 100).toFixed(0)}% round-trip efficiency</span><span>{(ENERGY_MODEL.dayImportRate * 100).toFixed(0)}p day · {(ENERGY_MODEL.offPeakImportRate * 100).toFixed(0)}p 00:00–07:00</span><span>{(ENERGY_MODEL.exportRate * 100).toFixed(0)}p export · {(ENERGY_MODEL.standingChargePerDay * 100).toFixed(0)}p/day standing charge</span><p>{solar ? "Roof and solar data © Google Maps. " : ""}Every half hour, solar serves the home first, then charges the battery; surplus is exported. The battery is topped up off-peak and discharges outside off-peak hours. Product price, finance, ROI and payback are excluded.</p></div>
+      <div className="assumption-box"><b>Pylon-style half-hour model</b><span>{estimate.annualYieldPerKwp} kWh/kWp {solar ? "Google Solar building yield" : "fallback annual yield"}</span><span>{(ENERGY_MODEL.deliveredEnergyFactor * 100).toFixed(0)}% usable-energy factor after conversion and system losses</span><span>{ENERGY_MODEL.batteryCapacityKwh} kWh battery · {(ENERGY_MODEL.batteryRoundTripEfficiency * 100).toFixed(0)}% round-trip efficiency</span><span>{(ENERGY_MODEL.dayImportRate * 100).toFixed(0)}p day · {(ENERGY_MODEL.offPeakImportRate * 100).toFixed(0)}p 00:00–07:00</span><span>{(ENERGY_MODEL.exportRate * 100).toFixed(0)}p export · {(ENERGY_MODEL.standingChargePerDay * 100).toFixed(0)}p/day standing charge</span><p>{solar ? "Roof and solar data © Google Maps. " : ""}The raw DC estimate is reduced to 90% before bill modelling. Every half hour, solar serves the home first, then charges the battery; surplus is exported. The battery is topped up off-peak and discharges outside off-peak hours. Product price, finance, ROI and payback are excluded.</p></div>
 
       <ProjectionChart points={estimate.projection}/>
       <button className="primary result-cta" onClick={() => go("booking")}>Book a free technical survey <span>→</span></button>
@@ -284,7 +285,7 @@ export default function Home() {
   if (stage === "booking") return <main className="app-shell booking-bg">
     <nav className="nav"><Brand/><button className="text-button" onClick={() => go("result")}>← Back to results</button></nav>
     <section className="booking-step">
-      <div className="booking-summary"><div className="eyebrow"><span/> Your solar potential</div><h2>Ready to confirm your roof?</h2><p>A free on-site survey confirms roof capacity, shading, electrical setup and a more accurate generation estimate.</p><div className="summary-card"><small>{solar ? "Google Solar building assessment" : "Indicative roof assessment"}</small><h3>{estimate.panelCount} × {PANEL.watts}W panels</h3><div><span>System potential</span><b>{estimate.systemKwp.toFixed(2)} kWp</b></div><div><span>Estimated annual generation</span><b>{estimate.generation.toLocaleString("en-GB")} kWh</b></div><div><span>Estimated annual benefit</span><b>{money(estimate.energy.annualBenefit)}</b></div></div><p className="address-note">⌖ {address}</p></div>
+      <div className="booking-summary"><div className="eyebrow"><span/> Your solar potential</div><h2>Ready to confirm your roof?</h2><p>A free on-site survey confirms roof capacity, shading, electrical setup and a more accurate generation estimate.</p><div className="summary-card"><small>{solar ? "Google Solar building assessment" : "Indicative roof assessment"}</small><h3>{estimate.panelCount} × {PANEL.watts}W panels</h3><div><span>System potential</span><b>{estimate.systemKwp.toFixed(2)} kWp</b></div><div><span>Usable annual generation</span><b>{estimate.deliveredGeneration.toLocaleString("en-GB")} kWh</b></div><div><span>Estimated annual benefit</span><b>{money(estimate.energy.annualBenefit)}</b></div></div><p className="address-note">⌖ {address}</p></div>
       <form className="booking-form" onSubmit={submit}><span className="form-kicker">Free technical survey</span><h3>Where should we contact you?</h3><p>No lengthy form. Just the details needed to arrange your visit.</p><label>Phone number <b>*</b><input required type="tel" placeholder="e.g. 07700 900000" value={form.phone} onChange={e => setForm({...form, phone:e.target.value})}/></label><label>Email address <b>*</b><input required type="email" placeholder="you@example.com" value={form.email} onChange={e => setForm({...form, email:e.target.value})}/></label><label>Preferred survey time <small>Optional</small><input placeholder="e.g. Weekday mornings" value={form.time} onChange={e => setForm({...form, time:e.target.value})}/></label><label className="consent"><input required type="checkbox"/><span>I agree to be contacted about this solar assessment and survey.</span></label><button className="primary full" type="submit">Book my free survey <span>→</span></button><small className="privacy">Your details are used only to arrange your solar consultation.</small></form>
     </section>
   </main>;

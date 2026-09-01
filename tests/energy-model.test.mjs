@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ENERGY_MODEL, buildThirtyYearProjection, simulateEnergy } from "../app/energyModel.ts";
 
-test("half-hour model reproduces the Pylon-style annual energy flow", () => {
-  const result = simulateEnergy({ annualUsageKwh: 4181.116, annualGenerationKwh: 3583.37 });
+test("half-hour model applies the conservative delivered-energy factor", () => {
+  const result = simulateEnergy({ annualUsageKwh: 4181.116, annualGenerationKwh: 3583.37 * ENERGY_MODEL.deliveredEnergyFactor });
 
   assert.equal(result.monthly.length, 12);
+  assert.equal(ENERGY_MODEL.deliveredEnergyFactor, 0.9);
   assert.ok(result.annualBillBefore > 1100 && result.annualBillBefore < 1250);
+  assert.ok(result.annualBillAfter > 130 && result.annualBillAfter < 145);
   assert.ok(result.annualBillAfter < result.annualBillBefore);
   assert.ok(result.batteryGridChargeKwh > 0);
   assert.ok(result.batteryToHomeKwh > 0);
