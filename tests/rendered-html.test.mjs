@@ -47,5 +47,7 @@ test("keeps third-party credentials on server routes", async () => {
   assert.match(page, /typeof item === "string"/);
   assert.match(page, /simulateEnergy/);
   assert.doesNotMatch(page, /selfUseRate:\s*0\.45/);
+  assert.match(page, /Panels used in savings model/);
+  assert.match(page, /setPanelOverride/);
   assert.match(assessmentRoute, /private, no-store/);
 });

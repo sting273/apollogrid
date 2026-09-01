@@ -120,12 +120,16 @@ export default function Home() {
   const [usage, setUsage] = useState(5000);
   const [usageSource, setUsageSource] = useState<"desnz" | "manual" | "fallback">("fallback");
   const [editingUsage, setEditingUsage] = useState(false);
+  const [panelOverride, setPanelOverride] = useState<number | null>(null);
+  const [editingPanels, setEditingPanels] = useState(false);
+  const [panelDraft, setPanelDraft] = useState("");
   const [form, setForm] = useState({ phone: "", email: "", time: "" });
 
   const estimate = useMemo(() => {
     const panelArea = PANEL.width * PANEL.height;
     const annualYieldPerKwp = solar?.annualYieldPerKwp ?? ASSUMPTIONS.annualYieldPerKwp;
-    const panelCount = solar ? Math.min(solar.maxPanels, Math.max(1, Math.ceil(usage / (PANEL.watts / 1000 * annualYieldPerKwp)))) : PANEL.count;
+    const suggestedPanelCount = solar ? Math.min(solar.maxPanels, Math.max(1, Math.ceil(usage / (PANEL.watts / 1000 * annualYieldPerKwp)))) : PANEL.count;
+    const panelCount = panelOverride ?? suggestedPanelCount;
     const totalPanelArea = panelArea * panelCount;
     const efficiency = PANEL.watts / (panelArea * 1000) * 100;
     const systemKwp = PANEL.watts * panelCount / 1000;
@@ -135,8 +139,8 @@ export default function Home() {
     const solarBattery = simulateEnergy({ annualUsageKwh: usage, annualGenerationKwh: deliveredGeneration, batteryEnabled: true });
     const projection = buildThirtyYearProjection(usage, deliveredGeneration);
 
-    return { panelArea, panelCount, annualYieldPerKwp, totalPanelArea, efficiency, systemKwp, dcGeneration, deliveredGeneration, solarOnly, solarBattery, projection };
-  }, [usage, solar]);
+    return { panelArea, panelCount, suggestedPanelCount, annualYieldPerKwp, totalPanelArea, efficiency, systemKwp, dcGeneration, deliveredGeneration, solarOnly, solarBattery, projection };
+  }, [usage, solar, panelOverride]);
 
   useEffect(() => {
     const compact = postcode.toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -182,6 +186,9 @@ export default function Home() {
   const findHome = () => { if (lookup) setSearched(true); };
   const chooseAddress = async (item: AddressOption) => {
     setAddress(item.formatted);
+    setPanelOverride(null);
+    setEditingPanels(false);
+    setPanelDraft("");
     setLoadingRoof(true);
     setRoofError("");
     try {
@@ -197,6 +204,13 @@ export default function Home() {
       setStage("roof");
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
+  };
+  const editPanelCount = () => { setPanelDraft(String(estimate.panelCount)); setEditingPanels(true); };
+  const applyPanelCount = () => {
+    const parsed = Number.parseInt(panelDraft, 10);
+    if (!Number.isFinite(parsed)) return;
+    setPanelOverride(Math.max(1, Math.min(parsed, 60)));
+    setEditingPanels(false);
   };
   const go = (next: Stage) => { setStage(next); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const submit = (e: FormEvent) => { e.preventDefault(); go("complete"); };
@@ -234,10 +248,11 @@ export default function Home() {
           <div className="stat-grid">
             <div><small>Max. panels</small><strong>{solar?.maxPanels ?? PANEL.count}</strong></div>
             <div><small>Panel rating</small><strong>{PANEL.watts} <em>W</em></strong></div>
-            <div><small>Suggested system</small><strong>{estimate.panelCount} <em>panels</em></strong></div>
+            <div><small>Google-based suggestion</small><strong>{estimate.suggestedPanelCount} <em>panels</em></strong></div>
             <div><small>Panel dimensions</small><strong className="compact-stat">{PANEL.height} × {PANEL.width}m</strong></div>
           </div>
-          <div className="panel-spec"><div><span>Suggested system size</span><b>{estimate.systemKwp.toFixed(2)} kWp · {estimate.totalPanelArea.toFixed(1)}m²</b></div><div><span>{solar ? "Building-specific yield" : "Fallback annual yield"}</span><b>{estimate.annualYieldPerKwp} kWh/kWp</b></div></div>
+          <div className="panel-count-card"><div><span>Panels used in savings model</span><small>{panelOverride === null ? "Using the Google-based suggestion" : "Manual scenario override"}</small></div>{editingPanels ? <div className="panel-count-edit"><input aria-label="Panel count" type="number" min="1" max="60" inputMode="numeric" value={panelDraft} onChange={e => setPanelDraft(e.target.value)} onKeyDown={e => e.key === "Enter" && applyPanelCount()}/><span>panels</span><button onClick={applyPanelCount}>Use this</button></div> : <div className="panel-count-value"><strong>{estimate.panelCount}</strong><span>panels</span><button onClick={editPanelCount}>Edit</button>{panelOverride !== null && <button className="reset" onClick={() => setPanelOverride(null)}>Reset</button>}</div>}<p>{panelOverride !== null && solar && panelOverride > solar.maxPanels ? `Testing ${panelOverride} panels even though Google Solar returned ${solar.maxPanels}. Confirmed survey layouts can override the API estimate.` : "Change this when a survey, proposal or signed design confirms a different panel count."}</p></div>
+          <div className="panel-spec"><div><span>Modelled system size</span><b>{estimate.systemKwp.toFixed(2)} kWp · {estimate.totalPanelArea.toFixed(1)}m²</b></div><div><span>{solar ? "Building-specific yield" : "Fallback annual yield"}</span><b>{estimate.annualYieldPerKwp} kWh/kWp</b></div></div>
           <div className="energy-card"><div><span>Estimated annual electricity use</span><small>{usageSource === "desnz" && lookup?.electricity ? lookup.electricity.scope === "baseline" ? "2,000 kWh minimum planning baseline" : `${lookup.electricity.scope === "postcode" ? lookup.postcode : `${lookup.postcode.split(" ")[0]} area`} median · DESNZ ${lookup.electricity.year} · ${lookup.electricity.meters.toLocaleString("en-GB")} meters` : usageSource === "manual" ? "Customer-provided figure" : "National fallback estimate"}</small></div>{editingUsage ? <div className="usage-edit"><input type="number" min="1000" max="30000" value={usage} onChange={e => setUsage(Math.max(Number(e.target.value), 1))}/><span>kWh/year</span><button onClick={() => { setEditingUsage(false); setUsageSource("manual"); }}>Use this</button></div> : <div className="usage-value"><strong>{usage.toLocaleString("en-GB")}</strong><span>kWh/year</span><button onClick={() => setEditingUsage(true)}>Edit</button></div>}<p>{lookup?.electricity?.fallbackReason === "postcode_below_minimum" ? `${lookup.postcode} was below 2,000 kWh, so the wider ${lookup.postcode.split(" ")[0]} median is used.` : lookup?.electricity?.fallbackReason === "missing_postcode" ? "No postcode row was published, so the wider postcode-area median is used." : lookup?.electricity?.fallbackReason === "outcode_below_minimum" ? "Both postcode levels were below 2,000 kWh, so the minimum planning baseline is used." : usageSource === "desnz" && lookup?.electricity && lookup.electricity.scope === "postcode" && lookup.electricity.meters < 10 ? "Small postcode sample: use the customer’s actual bill where available." : "Use this local estimate or replace it with the customer’s actual annual electricity usage."}</p></div>
           <button className="primary full" onClick={() => go("result")}>Calculate my yearly savings <span>→</span></button>
           <p className="fineprint">{solar ? "Roof and solar data © Google Maps. Final capacity requires a technical survey." : "Indicative assessment only. Final roof capacity and annual generation require detailed solar and technical data."}</p>
