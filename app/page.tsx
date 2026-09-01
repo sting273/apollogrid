@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import SolarRoofMap from "./SolarRoofMap";
+import { buildThirtyYearProjection, ENERGY_MODEL, MonthlyEnergyBill, ProjectionPoint, simulateEnergy } from "./energyModel";
 
 type Stage = "find" | "roof" | "result" | "booking" | "complete";
 
@@ -14,10 +15,6 @@ const PANEL = {
 
 const ASSUMPTIONS = {
   annualYieldPerKwp: 880,
-  selfUseRate: 0.45,
-  importTariff: 0.27,
-  exportTariff: 0.15,
-  standingChargePerDay: 0.55,
 };
 
 type Lookup = {
@@ -57,6 +54,35 @@ const money = (value: number) => new Intl.NumberFormat("en-GB", {
   currency: "GBP",
   maximumFractionDigits: 0,
 }).format(value);
+
+function MonthlyBillChart({ months }: { months: MonthlyEnergyBill[] }) {
+  const positiveMax = Math.max(...months.flatMap((month) => [month.before, Math.max(month.after, 0)]), 1);
+  const negativeMax = Math.max(...months.map((month) => Math.max(-month.after, 0)), 1);
+  return <section className="comparison-chart" aria-label="Monthly electricity bill before and after solar and battery">
+    <div className="chart-heading"><div><span>Monthly comparison</span><h3>What changes through the year</h3></div><div className="chart-legend"><span><i className="before"/>Before</span><span><i className="after"/>Solar + battery</span></div></div>
+    <div className="monthly-chart">
+      {months.map((month) => <div className="month-column" key={month.month}>
+        <div className="positive-zone">
+          <i className="bill-bar before" style={{ height: `${month.before / positiveMax * 100}%` }} title={`${month.month}: ${money(month.before)} before`}/>
+          {month.after >= 0 ? <i className="bill-bar after" style={{ height: `${month.after / positiveMax * 100}%` }} title={`${month.month}: ${money(month.after)} after`}/> : <i/>}
+        </div>
+        <div className="chart-zero"/>
+        <div className="negative-zone">{month.after < 0 && <i className="bill-bar credit" style={{ height: `${-month.after / negativeMax * 100}%` }} title={`${month.month}: ${money(month.after)} credit`}/>}</div>
+        <b>{month.month}</b><small>{money(month.after)}</small>
+      </div>)}
+    </div>
+    <p>Negative months represent an estimated bill credit after export income.</p>
+  </section>;
+}
+
+function ProjectionChart({ points }: { points: ProjectionPoint[] }) {
+  const max = Math.max(...points.map((point) => point.before), 1);
+  return <section className="comparison-chart projection-chart" aria-label="Thirty year electricity bill projection">
+    <div className="chart-heading"><div><span>30-year utility view</span><h3>Estimated bill with and without the system</h3></div><div className="chart-legend"><span><i className="before"/>Without</span><span><i className="after"/>With system</span></div></div>
+    <div className="year-chart">{points.map((point) => <div className="year-column" key={point.year} title={`Year ${point.year}: ${money(point.before)} without, ${money(point.after)} with`}><div><i className="before" style={{ height: `${point.before / max * 100}%` }}/><i className="after" style={{ height: `${Math.max(point.after, 0) / max * 100}%` }}/></div><span>{point.year === 1 || point.year % 5 === 0 ? point.year : ""}</span></div>)}</div>
+    <p>Utility rates rise 5% per year. Solar output is reduced by 1% in year one, then 0.35% of initial output per year. No purchase price or replacement cost is included.</p>
+  </section>;
+}
 
 function Brand() {
   return <button className="brand" onClick={() => window.location.reload()} aria-label="Apollogrid home"><span className="brand-mark"><i/><i/><i/></span><span>APOLLOGRID</span></button>;
@@ -103,20 +129,10 @@ export default function Home() {
     const efficiency = PANEL.watts / (panelArea * 1000) * 100;
     const systemKwp = PANEL.watts * panelCount / 1000;
     const generation = Math.round(systemKwp * annualYieldPerKwp);
-    const selfConsumed = Math.min(Math.round(generation * ASSUMPTIONS.selfUseRate), usage);
-    const exported = Math.max(generation - selfConsumed, 0);
-    const gridImportBefore = usage;
-    const gridImportAfter = Math.max(usage - selfConsumed, 0);
-    const standingCharge = ASSUMPTIONS.standingChargePerDay * 365;
-    const currentBill = gridImportBefore * ASSUMPTIONS.importTariff + standingCharge;
-    const gridBillAfter = gridImportAfter * ASSUMPTIONS.importTariff + standingCharge;
-    const exportIncome = exported * ASSUMPTIONS.exportTariff;
-    const effectiveBillAfter = Math.max(gridBillAfter - exportIncome, 0);
-    const annualBenefit = currentBill - effectiveBillAfter;
-    const billReduction = annualBenefit / currentBill * 100;
-    const usageCovered = selfConsumed / usage * 100;
+    const energy = simulateEnergy({ annualUsageKwh: usage, annualGenerationKwh: generation });
+    const projection = buildThirtyYearProjection(usage, generation);
 
-    return { panelArea, panelCount, annualYieldPerKwp, totalPanelArea, efficiency, systemKwp, generation, selfConsumed, exported, gridImportAfter, standingCharge, currentBill, gridBillAfter, exportIncome, effectiveBillAfter, annualBenefit, billReduction, usageCovered };
+    return { panelArea, panelCount, annualYieldPerKwp, totalPanelArea, efficiency, systemKwp, generation, energy, projection };
   }, [usage, solar]);
 
   useEffect(() => {
@@ -235,27 +251,31 @@ export default function Home() {
 
       <div className="result-hero">
         <div className="generation-block"><span>Estimated annual generation</span><strong>{estimate.generation.toLocaleString("en-GB")}</strong><b>kWh / year</b><small>{estimate.systemKwp.toFixed(2)} kWp system · {estimate.totalPanelArea.toFixed(1)}m² of panels</small></div>
-        <div className="impact-block"><span>Estimated annual benefit</span><strong>{money(estimate.annualBenefit)}</strong><b>per year</b><div className="reduction-ring"><i style={{ "--value": `${estimate.billReduction * 3.6}deg` } as React.CSSProperties}/><span><b>{estimate.billReduction.toFixed(0)}%</b> lower effective electricity cost</span></div></div>
+        <div className="impact-block"><span>Estimated annual benefit</span><strong>{money(estimate.energy.annualBenefit)}</strong><b>per year</b><div className="reduction-ring"><i style={{ "--value": `${Math.max(0, Math.min(estimate.energy.billReduction, 100)) * 3.6}deg` } as React.CSSProperties}/><span><b>{estimate.energy.billReduction.toFixed(0)}%</b> lower effective electricity cost</span></div></div>
       </div>
 
       <div className="utility-card">
         <div className="utility-intro"><span className="utility-icon">▰</span><h3>Utility costs</h3><p>How much could you save after installing solar?</p></div>
         <div className="utility-table">
           <div className="utility-head"><span/><b>Before solar</b><b>With solar</b></div>
-          <div className="utility-row"><span>Average monthly bill</span><strong>{money(estimate.currentBill / 12)}</strong><strong className="solar-cost">{money(estimate.effectiveBillAfter / 12)} <em>↓ {estimate.billReduction.toFixed(0)}%</em></strong></div>
-          <div className="utility-row annual"><span>Annual bill</span><div><strong>{money(estimate.currentBill)}</strong><small>Current estimated cost</small></div><div><strong className="solar-cost">{money(estimate.effectiveBillAfter)} <em>↓ {estimate.billReduction.toFixed(0)}%</em></strong><small>Est. annual savings {money(estimate.annualBenefit)}</small></div></div>
+          <div className="utility-row"><span>Average monthly bill</span><strong>{money(estimate.energy.annualBillBefore / 12)}</strong><strong className="solar-cost">{money(estimate.energy.annualBillAfter / 12)} <em>↓ {estimate.energy.billReduction.toFixed(0)}%</em></strong></div>
+          <div className="utility-row annual"><span>Annual bill</span><div><strong>{money(estimate.energy.annualBillBefore)}</strong><small>Usage profile + current tariff</small></div><div><strong className="solar-cost">{money(estimate.energy.annualBillAfter)} <em>↓ {estimate.energy.billReduction.toFixed(0)}%</em></strong><small>Est. annual savings {money(estimate.energy.annualBenefit)}</small></div></div>
         </div>
       </div>
 
-      <div className="bill-breakdown"><span>How we reached the solar figure</span><p><b>{estimate.gridImportAfter.toLocaleString("en-GB")} kWh</b> remaining grid import</p><p><b>{money(estimate.gridBillAfter)}</b> grid bill incl. standing charge</p><p className="credit"><b>− {money(estimate.exportIncome)}</b> estimated export income</p></div>
+      <div className="bill-breakdown"><span>How we reached the solar figure</span><p><b>{Math.round(estimate.energy.gridImportKwh).toLocaleString("en-GB")} kWh</b> grid import incl. battery charging</p><p><b>{money(estimate.energy.annualBillAfter + estimate.energy.exportIncome)}</b> import + standing charge</p><p className="credit"><b>− {money(estimate.energy.exportIncome)}</b> export income</p></div>
+
+      <MonthlyBillChart months={estimate.energy.monthly}/>
 
       <div className="energy-flow">
-        <div><small>Used directly in your home</small><strong>{estimate.selfConsumed.toLocaleString("en-GB")} kWh</strong><span>{estimate.usageCovered.toFixed(0)}% of household use covered</span></div>
-        <div><small>Sent back to the grid</small><strong>{estimate.exported.toLocaleString("en-GB")} kWh</strong><span>Estimated at {(ASSUMPTIONS.exportTariff * 100).toFixed(0)}p/kWh export rate</span></div>
-        <div><small>Panel specification</small><strong>{PANEL.watts}W · {estimate.efficiency.toFixed(1)}%</strong><span>{PANEL.height}m × {PANEL.width}m per panel</span></div>
+        <div><small>Solar used on site</small><strong>{Math.round(estimate.energy.solarSelfConsumedKwh).toLocaleString("en-GB")} kWh</strong><span>{estimate.energy.solarSelfUseRate.toFixed(0)}% solar self-consumption</span></div>
+        <div><small>Battery supplied to home</small><strong>{Math.round(estimate.energy.batteryToHomeKwh).toLocaleString("en-GB")} kWh</strong><span>{estimate.energy.householdCoverage.toFixed(0)}% of household use covered by solar + battery</span></div>
+        <div><small>Sent back to the grid</small><strong>{Math.round(estimate.energy.exportKwh).toLocaleString("en-GB")} kWh</strong><span>Estimated at {(ENERGY_MODEL.exportRate * 100).toFixed(0)}p/kWh export rate</span></div>
       </div>
 
-      <div className="assumption-box"><b>How this estimate works</b><span>{estimate.annualYieldPerKwp} kWh/kWp {solar ? "Google Solar building yield" : "fallback annual yield"}</span><span>{(ASSUMPTIONS.selfUseRate * 100).toFixed(0)}% direct self-use</span><span>{(ASSUMPTIONS.importTariff * 100).toFixed(0)}p/kWh import</span><span>{(ASSUMPTIONS.exportTariff * 100).toFixed(0)}p/kWh export</span><p>{solar ? "Roof and solar data © Google Maps. " : ""}No system price, battery, finance, ROI or payback assumptions are included.</p></div>
+      <div className="assumption-box"><b>Pylon-style half-hour model</b><span>{estimate.annualYieldPerKwp} kWh/kWp {solar ? "Google Solar building yield" : "fallback annual yield"}</span><span>{ENERGY_MODEL.batteryCapacityKwh} kWh battery · {(ENERGY_MODEL.batteryRoundTripEfficiency * 100).toFixed(0)}% round-trip efficiency</span><span>{(ENERGY_MODEL.dayImportRate * 100).toFixed(0)}p day · {(ENERGY_MODEL.offPeakImportRate * 100).toFixed(0)}p 00:00–07:00</span><span>{(ENERGY_MODEL.exportRate * 100).toFixed(0)}p export · {(ENERGY_MODEL.standingChargePerDay * 100).toFixed(0)}p/day standing charge</span><p>{solar ? "Roof and solar data © Google Maps. " : ""}Every half hour, solar serves the home first, then charges the battery; surplus is exported. The battery is topped up off-peak and discharges outside off-peak hours. Product price, finance, ROI and payback are excluded.</p></div>
+
+      <ProjectionChart points={estimate.projection}/>
       <button className="primary result-cta" onClick={() => go("booking")}>Book a free technical survey <span>→</span></button>
       <p className="assumption">These figures are illustrative. A detailed survey will confirm usable roof area, shading, orientation and expected generation.</p>
     </section>
@@ -264,7 +284,7 @@ export default function Home() {
   if (stage === "booking") return <main className="app-shell booking-bg">
     <nav className="nav"><Brand/><button className="text-button" onClick={() => go("result")}>← Back to results</button></nav>
     <section className="booking-step">
-      <div className="booking-summary"><div className="eyebrow"><span/> Your solar potential</div><h2>Ready to confirm your roof?</h2><p>A free on-site survey confirms roof capacity, shading, electrical setup and a more accurate generation estimate.</p><div className="summary-card"><small>{solar ? "Google Solar building assessment" : "Indicative roof assessment"}</small><h3>{estimate.panelCount} × {PANEL.watts}W panels</h3><div><span>System potential</span><b>{estimate.systemKwp.toFixed(2)} kWp</b></div><div><span>Estimated annual generation</span><b>{estimate.generation.toLocaleString("en-GB")} kWh</b></div><div><span>Estimated annual benefit</span><b>{money(estimate.annualBenefit)}</b></div></div><p className="address-note">⌖ {address}</p></div>
+      <div className="booking-summary"><div className="eyebrow"><span/> Your solar potential</div><h2>Ready to confirm your roof?</h2><p>A free on-site survey confirms roof capacity, shading, electrical setup and a more accurate generation estimate.</p><div className="summary-card"><small>{solar ? "Google Solar building assessment" : "Indicative roof assessment"}</small><h3>{estimate.panelCount} × {PANEL.watts}W panels</h3><div><span>System potential</span><b>{estimate.systemKwp.toFixed(2)} kWp</b></div><div><span>Estimated annual generation</span><b>{estimate.generation.toLocaleString("en-GB")} kWh</b></div><div><span>Estimated annual benefit</span><b>{money(estimate.energy.annualBenefit)}</b></div></div><p className="address-note">⌖ {address}</p></div>
       <form className="booking-form" onSubmit={submit}><span className="form-kicker">Free technical survey</span><h3>Where should we contact you?</h3><p>No lengthy form. Just the details needed to arrange your visit.</p><label>Phone number <b>*</b><input required type="tel" placeholder="e.g. 07700 900000" value={form.phone} onChange={e => setForm({...form, phone:e.target.value})}/></label><label>Email address <b>*</b><input required type="email" placeholder="you@example.com" value={form.email} onChange={e => setForm({...form, email:e.target.value})}/></label><label>Preferred survey time <small>Optional</small><input placeholder="e.g. Weekday mornings" value={form.time} onChange={e => setForm({...form, time:e.target.value})}/></label><label className="consent"><input required type="checkbox"/><span>I agree to be contacted about this solar assessment and survey.</span></label><button className="primary full" type="submit">Book my free survey <span>→</span></button><small className="privacy">Your details are used only to arrange your solar consultation.</small></form>
     </section>
   </main>;

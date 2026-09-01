@@ -45,5 +45,7 @@ test("keeps third-party credentials on server routes", async () => {
   assert.match(roofMap, /import\("geotiff"\)/);
   assert.match(roofMap, /panels\.slice\(0, panelCount\)/);
   assert.match(page, /typeof item === "string"/);
+  assert.match(page, /simulateEnergy/);
+  assert.doesNotMatch(page, /selfUseRate:\s*0\.45/);
   assert.match(assessmentRoute, /private, no-store/);
 });
