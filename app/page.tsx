@@ -21,10 +21,26 @@ const ASSUMPTIONS = {
 
 type Lookup = {
   postcode: string;
+  latitude: number;
+  longitude: number;
   region: string | null;
   district: string | null;
   electricity: null | { meters: number; meanKwh: number; medianKwh: number; year: number; source: string; scope: "postcode" | "outcode" | "baseline"; fallbackReason: null | "missing_postcode" | "postcode_below_minimum" | "outcode_below_minimum" };
-  addressLookup: { configured: boolean; addresses: string[] };
+  addressLookup: { configured: boolean; addresses: AddressOption[] };
+};
+
+type AddressOption = { formatted: string; latitude: number; longitude: number };
+type SolarData = {
+  matched: true;
+  maxPanels: number;
+  annualYieldPerKwp: number;
+  maxArrayAreaMeters2: number | null;
+  roofAreaMeters2: number | null;
+  maxSunshineHoursPerYear: number | null;
+  roofPitchDegrees: number | null;
+  roofAzimuthDegrees: number | null;
+  imageryQuality: "HIGH" | "MEDIUM" | "BASE";
+  imageryDate: { year?: number; month?: number; day?: number } | null;
 };
 
 const money = (value: number) => new Intl.NumberFormat("en-GB", {
@@ -48,8 +64,8 @@ function RoofGraphic({ panels = PANEL.count, label = "Your postcode area" }: { p
   return <div className="roof-scene" aria-label={`Illustrative roof with ${panels} solar panels`}>
     <div className="roof-label"><span>●</span> Roof location<br/><b>{label}</b></div>
     <div className="compass">N<br/><span>↑</span></div>
-    <div className="roof-shape">{Array.from({ length: panels }).map((_, i) => <span className="panel" key={i} />)}</div>
-    <div className="map-tag">Indicative roof preview</div>
+    <div className="roof-shape">{Array.from({ length: Math.min(panels, 16) }).map((_, i) => <span className="panel" key={i} />)}</div>
+    <div className="map-tag">Roof assessment preview</div>
   </div>;
 }
 
@@ -62,6 +78,9 @@ export default function Home() {
   const [loadingLookup, setLoadingLookup] = useState(false);
   const [premise, setPremise] = useState("");
   const [address, setAddress] = useState("NW4 1HJ");
+  const [solar, setSolar] = useState<SolarData | null>(null);
+  const [loadingRoof, setLoadingRoof] = useState(false);
+  const [roofError, setRoofError] = useState("");
   const [usage, setUsage] = useState(5000);
   const [usageSource, setUsageSource] = useState<"desnz" | "manual" | "fallback">("fallback");
   const [editingUsage, setEditingUsage] = useState(false);
@@ -69,10 +88,12 @@ export default function Home() {
 
   const estimate = useMemo(() => {
     const panelArea = PANEL.width * PANEL.height;
-    const totalPanelArea = panelArea * PANEL.count;
+    const annualYieldPerKwp = solar?.annualYieldPerKwp ?? ASSUMPTIONS.annualYieldPerKwp;
+    const panelCount = solar ? Math.min(solar.maxPanels, Math.max(1, Math.ceil(usage / (PANEL.watts / 1000 * annualYieldPerKwp)))) : PANEL.count;
+    const totalPanelArea = panelArea * panelCount;
     const efficiency = PANEL.watts / (panelArea * 1000) * 100;
-    const systemKwp = PANEL.watts * PANEL.count / 1000;
-    const generation = Math.round(systemKwp * ASSUMPTIONS.annualYieldPerKwp);
+    const systemKwp = PANEL.watts * panelCount / 1000;
+    const generation = Math.round(systemKwp * annualYieldPerKwp);
     const selfConsumed = Math.min(Math.round(generation * ASSUMPTIONS.selfUseRate), usage);
     const exported = Math.max(generation - selfConsumed, 0);
     const gridImportBefore = usage;
@@ -86,17 +107,12 @@ export default function Home() {
     const billReduction = annualBenefit / currentBill * 100;
     const usageCovered = selfConsumed / usage * 100;
 
-    return { panelArea, totalPanelArea, efficiency, systemKwp, generation, selfConsumed, exported, gridImportAfter, standingCharge, currentBill, gridBillAfter, exportIncome, effectiveBillAfter, annualBenefit, billReduction, usageCovered };
-  }, [usage]);
+    return { panelArea, panelCount, annualYieldPerKwp, totalPanelArea, efficiency, systemKwp, generation, selfConsumed, exported, gridImportAfter, standingCharge, currentBill, gridBillAfter, exportIncome, effectiveBillAfter, annualBenefit, billReduction, usageCovered };
+  }, [usage, solar]);
 
   useEffect(() => {
     const compact = postcode.toUpperCase().replace(/[^A-Z0-9]/g, "");
-    if (!/^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/.test(compact)) {
-      setLookup(null);
-      setSearched(false);
-      setLookupError("");
-      return;
-    }
+    if (!/^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/.test(compact)) return;
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       setLoadingLookup(true);
@@ -131,7 +147,24 @@ export default function Home() {
   }, [postcode]);
 
   const findHome = () => { if (lookup) setSearched(true); };
-  const chooseAddress = (item: string) => { setAddress(item); setStage("roof"); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const chooseAddress = async (item: AddressOption) => {
+    setAddress(item.formatted);
+    setLoadingRoof(true);
+    setRoofError("");
+    try {
+      const response = await fetch(`/api/solar?lat=${encodeURIComponent(item.latitude)}&lon=${encodeURIComponent(item.longitude)}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "No building-level solar data was found.");
+      setSolar(payload as SolarData);
+    } catch (error) {
+      setSolar(null);
+      setRoofError(error instanceof Error ? error.message : "No building-level solar data was found.");
+    } finally {
+      setLoadingRoof(false);
+      setStage("roof");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
   const go = (next: Stage) => { setStage(next); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const submit = (e: FormEvent) => { e.preventDefault(); go("complete"); };
 
@@ -145,13 +178,13 @@ export default function Home() {
         <div className="hero-steps"><div><b>1</b><span><strong>Find your home</strong>Enter your postcode</span></div><i/><div><b>2</b><span><strong>See your roof</strong>Estimate panel capacity</span></div><i/><div><b>3</b><span><strong>See your savings</strong>Compare your yearly bill</span></div></div>
         <div className="finder">
           <label htmlFor="postcode">Enter your postcode</label>
-          <div className="finder-row"><input id="postcode" value={postcode} onChange={(e) => { setPostcode(e.target.value.toUpperCase()); setSearched(false); }} onKeyDown={(e) => e.key === "Enter" && findHome()} placeholder="e.g. NW4 1HJ"/><button onClick={findHome} disabled={!lookup || loadingLookup}>{loadingLookup ? "Loading…" : "Find my home"} <span>→</span></button></div>
+          <div className="finder-row"><input id="postcode" value={postcode} onChange={(e) => { setPostcode(e.target.value.toUpperCase()); setLookup(null); setLookupError(""); setSearched(false); }} onKeyDown={(e) => e.key === "Enter" && findHome()} placeholder="e.g. NW4 1HJ"/><button onClick={findHome} disabled={!lookup || loadingLookup}>{loadingLookup ? "Loading…" : "Find my home"} <span>→</span></button></div>
           {lookupError && <div className="lookup-error">{lookupError}</div>}
-          {searched && lookup && <div className="address-list"><p>{lookup.addressLookup.addresses.length ? "Select your address" : `Address in ${lookup.postcode}`}</p>{lookup.addressLookup.addresses.length ? lookup.addressLookup.addresses.map(item => <button key={item} onClick={() => chooseAddress(item)}><span>{item}</span><b>→</b></button>) : <div className="manual-address"><label htmlFor="premise">House number or name</label><div><input id="premise" value={premise} onChange={e => setPremise(e.target.value)} placeholder="e.g. 6 Garrick Drive"/><button disabled={!premise.trim()} onClick={() => chooseAddress(`${premise.trim()}, ${lookup.postcode}`)}>Continue →</button></div><small>{lookup.addressLookup.configured ? "No delivery addresses were returned for this postcode." : "Automatic address lists require a Royal Mail PAF address-data connection."}</small></div>}</div>}
+          {searched && lookup && <div className="address-list"><p>{loadingRoof ? "Matching your roof with Google Solar…" : lookup.addressLookup.addresses.length ? "Select your address" : `Address in ${lookup.postcode}`}</p>{lookup.addressLookup.addresses.length ? lookup.addressLookup.addresses.map(item => <button key={item.formatted} disabled={loadingRoof} onClick={() => chooseAddress(item)}><span>{item.formatted}</span><b>→</b></button>) : <div className="manual-address"><label htmlFor="premise">House number or name</label><div><input id="premise" value={premise} onChange={e => setPremise(e.target.value)} placeholder="e.g. 6 Garrick Drive"/><button disabled={!premise.trim() || loadingRoof} onClick={() => chooseAddress({ formatted: `${premise.trim()}, ${lookup.postcode}`, latitude: lookup.latitude, longitude: lookup.longitude })}>{loadingRoof ? "Matching…" : "Continue →"}</button></div><small>{lookup.addressLookup.configured ? "No delivery addresses were returned for this postcode." : "Automatic address lists require a Royal Mail PAF address-data connection."}</small></div>}</div>}
           <small><span>⌖</span> Postcode electricity use comes from DESNZ 2024 official statistics.</small>
         </div>
       </div>
-      <div className="hero-visual"><div className="sun-glow"/><RoofGraphic label={lookup?.postcode ?? postcode}/><div className="potential"><span>Estimated potential</span><strong>{PANEL.count} panels</strong><b>{estimate.systemKwp.toFixed(2)} kWp</b></div></div>
+      <div className="hero-visual"><div className="sun-glow"/><RoofGraphic label={lookup?.postcode ?? postcode}/><div className="potential"><span>Illustrative potential</span><strong>{PANEL.count} panels</strong><b>{estimate.systemKwp.toFixed(2)} kWp</b></div></div>
     </section>
     <div className="trust-bar"><span>Built for UK homes</span><b>490W solar panels</b><b>Address-led estimate</b><b>No product pricing assumed</b></div>
   </main>;
@@ -162,19 +195,19 @@ export default function Home() {
     <section className="roof-step">
       <div className="section-heading"><div className="eyebrow"><span/> Step 2 — Your roof</div><h2>We found your home.</h2><p>{address}</p></div>
       <div className="roof-grid">
-        <div className="map-wrap"><RoofGraphic label={address.split(",")[0]}/><div className="demo-flag">Indicative roof data</div></div>
+        <div className="map-wrap"><RoofGraphic panels={estimate.panelCount} label={address.split(",")[0]}/><div className="demo-flag">{solar ? `Google Solar · ${solar.imageryQuality}` : "Indicative roof data"}</div></div>
         <div className="roof-details">
-          <div className="found"><span>✓</span><div><b>Good solar potential</b><small>Indicative south and south-west facing roof sections</small></div></div>
+          <div className="found"><span>✓</span><div><b>{solar ? "Building-level solar data found" : "Indicative solar potential"}</b><small>{solar ? `${solar.roofAreaMeters2?.toFixed(0) ?? "—"}m² roof · ${solar.maxSunshineHoursPerYear?.toFixed(0) ?? "—"} peak sunshine hours/year` : roofError || "Google Solar data was unavailable; fallback assumptions are shown."}</small></div></div>
           <div className="stat-grid">
-            <div><small>Max. panels</small><strong>{PANEL.count}</strong></div>
+            <div><small>Max. panels</small><strong>{solar?.maxPanels ?? PANEL.count}</strong></div>
             <div><small>Panel rating</small><strong>{PANEL.watts} <em>W</em></strong></div>
-            <div><small>System potential</small><strong>{estimate.systemKwp.toFixed(2)} <em>kWp</em></strong></div>
+            <div><small>Suggested system</small><strong>{estimate.panelCount} <em>panels</em></strong></div>
             <div><small>Panel dimensions</small><strong className="compact-stat">{PANEL.height} × {PANEL.width}m</strong></div>
           </div>
-          <div className="panel-spec"><div><span>Combined panel area</span><b>{estimate.totalPanelArea.toFixed(1)}m²</b></div><div><span>Efficiency from size & rating</span><b>{estimate.efficiency.toFixed(1)}%</b></div></div>
+          <div className="panel-spec"><div><span>Suggested system size</span><b>{estimate.systemKwp.toFixed(2)} kWp · {estimate.totalPanelArea.toFixed(1)}m²</b></div><div><span>{solar ? "Building-specific yield" : "Fallback annual yield"}</span><b>{estimate.annualYieldPerKwp} kWh/kWp</b></div></div>
           <div className="energy-card"><div><span>Estimated annual electricity use</span><small>{usageSource === "desnz" && lookup?.electricity ? lookup.electricity.scope === "baseline" ? "2,000 kWh minimum planning baseline" : `${lookup.electricity.scope === "postcode" ? lookup.postcode : `${lookup.postcode.split(" ")[0]} area`} median · DESNZ ${lookup.electricity.year} · ${lookup.electricity.meters.toLocaleString("en-GB")} meters` : usageSource === "manual" ? "Customer-provided figure" : "National fallback estimate"}</small></div>{editingUsage ? <div className="usage-edit"><input type="number" min="1000" max="30000" value={usage} onChange={e => setUsage(Math.max(Number(e.target.value), 1))}/><span>kWh/year</span><button onClick={() => { setEditingUsage(false); setUsageSource("manual"); }}>Use this</button></div> : <div className="usage-value"><strong>{usage.toLocaleString("en-GB")}</strong><span>kWh/year</span><button onClick={() => setEditingUsage(true)}>Edit</button></div>}<p>{lookup?.electricity?.fallbackReason === "postcode_below_minimum" ? `${lookup.postcode} was below 2,000 kWh, so the wider ${lookup.postcode.split(" ")[0]} median is used.` : lookup?.electricity?.fallbackReason === "missing_postcode" ? "No postcode row was published, so the wider postcode-area median is used." : lookup?.electricity?.fallbackReason === "outcode_below_minimum" ? "Both postcode levels were below 2,000 kWh, so the minimum planning baseline is used." : usageSource === "desnz" && lookup?.electricity && lookup.electricity.scope === "postcode" && lookup.electricity.meters < 10 ? "Small postcode sample: use the customer’s actual bill where available." : "Use this local estimate or replace it with the customer’s actual annual electricity usage."}</p></div>
           <button className="primary full" onClick={() => go("result")}>Calculate my yearly savings <span>→</span></button>
-          <p className="fineprint">Indicative assessment only. Final roof capacity and annual generation require detailed solar and technical data.</p>
+          <p className="fineprint">{solar ? "Roof and solar data © Google Maps. Final capacity requires a technical survey." : "Indicative assessment only. Final roof capacity and annual generation require detailed solar and technical data."}</p>
         </div>
       </div>
     </section>
@@ -184,7 +217,7 @@ export default function Home() {
     <nav className="nav"><Brand/><button className="text-button" onClick={() => go("roof")}>← Back to roof</button></nav>
     <Progress stage={stage}/>
     <section className="result-step">
-      <div className="section-heading centered"><div className="eyebrow"><span/> Step 3 — Your savings</div><h2>Your roof could make a real difference.</h2><p>Based on {PANEL.count} × {PANEL.watts}W panels and {usage.toLocaleString("en-GB")} kWh estimated household use.</p></div>
+      <div className="section-heading centered"><div className="eyebrow"><span/> Step 3 — Your savings</div><h2>Your roof could make a real difference.</h2><p>Based on {estimate.panelCount} × {PANEL.watts}W panels and {usage.toLocaleString("en-GB")} kWh estimated household use.</p></div>
 
       <div className="result-hero">
         <div className="generation-block"><span>Estimated annual generation</span><strong>{estimate.generation.toLocaleString("en-GB")}</strong><b>kWh / year</b><small>{estimate.systemKwp.toFixed(2)} kWp system · {estimate.totalPanelArea.toFixed(1)}m² of panels</small></div>
@@ -208,7 +241,7 @@ export default function Home() {
         <div><small>Panel specification</small><strong>{PANEL.watts}W · {estimate.efficiency.toFixed(1)}%</strong><span>{PANEL.height}m × {PANEL.width}m per panel</span></div>
       </div>
 
-      <div className="assumption-box"><b>How this estimate works</b><span>{ASSUMPTIONS.annualYieldPerKwp} kWh/kWp annual solar yield</span><span>{(ASSUMPTIONS.selfUseRate * 100).toFixed(0)}% direct self-use</span><span>{(ASSUMPTIONS.importTariff * 100).toFixed(0)}p/kWh import</span><span>{(ASSUMPTIONS.exportTariff * 100).toFixed(0)}p/kWh export</span><p>No system price, battery, finance, ROI or payback assumptions are included.</p></div>
+      <div className="assumption-box"><b>How this estimate works</b><span>{estimate.annualYieldPerKwp} kWh/kWp {solar ? "Google Solar building yield" : "fallback annual yield"}</span><span>{(ASSUMPTIONS.selfUseRate * 100).toFixed(0)}% direct self-use</span><span>{(ASSUMPTIONS.importTariff * 100).toFixed(0)}p/kWh import</span><span>{(ASSUMPTIONS.exportTariff * 100).toFixed(0)}p/kWh export</span><p>{solar ? "Roof and solar data © Google Maps. " : ""}No system price, battery, finance, ROI or payback assumptions are included.</p></div>
       <button className="primary result-cta" onClick={() => go("booking")}>Book a free technical survey <span>→</span></button>
       <p className="assumption">These figures are illustrative. A detailed survey will confirm usable roof area, shading, orientation and expected generation.</p>
     </section>
@@ -217,7 +250,7 @@ export default function Home() {
   if (stage === "booking") return <main className="app-shell booking-bg">
     <nav className="nav"><Brand/><button className="text-button" onClick={() => go("result")}>← Back to results</button></nav>
     <section className="booking-step">
-      <div className="booking-summary"><div className="eyebrow"><span/> Your solar potential</div><h2>Ready to confirm your roof?</h2><p>A free on-site survey confirms roof capacity, shading, electrical setup and a more accurate generation estimate.</p><div className="summary-card"><small>Indicative roof assessment</small><h3>{PANEL.count} × {PANEL.watts}W panels</h3><div><span>System potential</span><b>{estimate.systemKwp.toFixed(2)} kWp</b></div><div><span>Estimated annual generation</span><b>{estimate.generation.toLocaleString("en-GB")} kWh</b></div><div><span>Estimated annual benefit</span><b>{money(estimate.annualBenefit)}</b></div></div><p className="address-note">⌖ {address}</p></div>
+      <div className="booking-summary"><div className="eyebrow"><span/> Your solar potential</div><h2>Ready to confirm your roof?</h2><p>A free on-site survey confirms roof capacity, shading, electrical setup and a more accurate generation estimate.</p><div className="summary-card"><small>{solar ? "Google Solar building assessment" : "Indicative roof assessment"}</small><h3>{estimate.panelCount} × {PANEL.watts}W panels</h3><div><span>System potential</span><b>{estimate.systemKwp.toFixed(2)} kWp</b></div><div><span>Estimated annual generation</span><b>{estimate.generation.toLocaleString("en-GB")} kWh</b></div><div><span>Estimated annual benefit</span><b>{money(estimate.annualBenefit)}</b></div></div><p className="address-note">⌖ {address}</p></div>
       <form className="booking-form" onSubmit={submit}><span className="form-kicker">Free technical survey</span><h3>Where should we contact you?</h3><p>No lengthy form. Just the details needed to arrange your visit.</p><label>Phone number <b>*</b><input required type="tel" placeholder="e.g. 07700 900000" value={form.phone} onChange={e => setForm({...form, phone:e.target.value})}/></label><label>Email address <b>*</b><input required type="email" placeholder="you@example.com" value={form.email} onChange={e => setForm({...form, email:e.target.value})}/></label><label>Preferred survey time <small>Optional</small><input placeholder="e.g. Weekday mornings" value={form.time} onChange={e => setForm({...form, time:e.target.value})}/></label><label className="consent"><input required type="checkbox"/><span>I agree to be contacted about this solar assessment and survey.</span></label><button className="primary full" type="submit">Book my free survey <span>→</span></button><small className="privacy">Your details are used only to arrange your solar consultation.</small></form>
     </section>
   </main>;

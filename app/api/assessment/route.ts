@@ -10,6 +10,8 @@ type ElectricityRow = {
   fallbackReason: null | "missing_postcode" | "postcode_below_minimum" | "outcode_below_minimum";
 };
 
+type AddressResult = { formatted: string; latitude: number; longitude: number };
+
 function normalisePostcode(value: string) {
   const compact = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
   return compact.length > 3 ? `${compact.slice(0, -3)} ${compact.slice(-3)}` : compact;
@@ -93,14 +95,22 @@ async function lookupElectricity(postcode: string): Promise<ElectricityRow | nul
   return null;
 }
 
-async function lookupAddresses(postcode: string) {
+async function lookupAddresses(postcode: string, fallbackLatitude: number, fallbackLongitude: number) {
   const apiKey = process.env.IDEAL_POSTCODES_API_KEY?.trim();
-  if (!apiKey) return { configured: false, addresses: [] as string[] };
+  if (!apiKey) return { configured: false, addresses: [] as AddressResult[] };
 
   const response = await fetch(`https://api.ideal-postcodes.co.uk/v1/postcodes/${encodeURIComponent(postcode)}?api_key=${encodeURIComponent(apiKey)}`);
-  if (!response.ok) return { configured: true, addresses: [] as string[] };
-  const payload = await response.json() as { result?: Array<{ line_1?: string; line_2?: string; line_3?: string; post_town?: string; postcode?: string }> };
-  const addresses = (payload.result ?? []).map((item) => [item.line_1, item.line_2, item.line_3, item.post_town, item.postcode].filter(Boolean).join(", "));
+  if (!response.ok) return { configured: true, addresses: [] as AddressResult[] };
+  const payload = await response.json() as { result?: Array<{ line_1?: string; line_2?: string; line_3?: string; post_town?: string; postcode?: string; latitude?: number; longitude?: number }> };
+  const addresses = (payload.result ?? []).map((item) => {
+    const latitude = Number(item.latitude);
+    const longitude = Number(item.longitude);
+    return {
+      formatted: [item.line_1, item.line_2, item.line_3, item.post_town, item.postcode].filter(Boolean).join(", "),
+      latitude: Number.isFinite(latitude) ? latitude : fallbackLatitude,
+      longitude: Number.isFinite(longitude) ? longitude : fallbackLongitude,
+    };
+  });
   return { configured: true, addresses };
 }
 
@@ -116,7 +126,7 @@ export async function GET(request: Request) {
 
   const [electricity, addressLookup] = await Promise.all([
     lookupElectricity(locationPayload.result.postcode).catch(() => null),
-    lookupAddresses(locationPayload.result.postcode).catch(() => ({ configured: Boolean(process.env.IDEAL_POSTCODES_API_KEY), addresses: [] as string[] })),
+    lookupAddresses(locationPayload.result.postcode, locationPayload.result.latitude, locationPayload.result.longitude).catch(() => ({ configured: Boolean(process.env.IDEAL_POSTCODES_API_KEY), addresses: [] as AddressResult[] })),
   ]);
 
   return Response.json({
