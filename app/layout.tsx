@@ -13,18 +13,18 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Apollo Solar | Your roof. Your savings.",
+  title: "APOLLOGRID | Your roof. Your savings.",
   description: "See your home's estimated solar generation and possible electricity bill reduction in under 60 seconds.",
   openGraph: {
-    title: "Apollo Solar | See what your roof could save you.",
+    title: "APOLLOGRID | See what your roof could save you.",
     description: "Estimate your roof's yearly solar generation and possible electricity bill reduction — in under 60 seconds.",
-    images: [{ url: "/og.png", width: 1731, height: 907, alt: "Apollo Solar roof savings assessment" }],
+    images: [{ url: "https://apollo-solar-assessment.guoyiding273.chatgpt.site/og.png", width: 1200, height: 630, alt: "APOLLOGRID roof savings assessment" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Apollo Solar | See what your roof could save you.",
+    title: "APOLLOGRID | See what your roof could save you.",
     description: "Estimate your roof's yearly solar generation and possible electricity bill reduction — in under 60 seconds.",
-    images: ["/og.png"],
+    images: ["https://apollo-solar-assessment.guoyiding273.chatgpt.site/og.png"],
   },
   icons: {
     icon: "/favicon.svg",

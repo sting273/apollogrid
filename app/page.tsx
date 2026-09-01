@@ -33,7 +33,7 @@ const money = (value: number) => new Intl.NumberFormat("en-GB", {
 }).format(value);
 
 function Brand() {
-  return <button className="brand" onClick={() => window.location.reload()} aria-label="Apollo Solar home"><span className="brand-mark">A</span><span>Apollo Solar</span></button>;
+  return <button className="brand" onClick={() => window.location.reload()} aria-label="Apollogrid home"><span className="brand-mark"><i/><i/><i/></span><span>APOLLOGRID</span></button>;
 }
 
 function Progress({ stage }: { stage: Stage }) {
@@ -143,11 +143,16 @@ export default function Home() {
         <div className="impact-block"><span>Estimated annual benefit</span><strong>{money(estimate.annualBenefit)}</strong><b>per year</b><div className="reduction-ring"><i style={{ "--value": `${estimate.billReduction * 3.6}deg` } as React.CSSProperties}/><span><b>{estimate.billReduction.toFixed(0)}%</b> lower effective electricity cost</span></div></div>
       </div>
 
-      <div className="bill-compare">
-        <div className="bill-column before"><div className="bill-title"><span>Today</span><h3>Without solar</h3></div><div className="bill-number"><strong>{money(estimate.currentBill)}</strong><span>estimated annual electricity cost</span></div><div className="bill-lines"><p><span>Grid electricity</span><b>{usage.toLocaleString("en-GB")} kWh</b></p><p><span>Energy charge</span><b>{money(usage * ASSUMPTIONS.importTariff)}</b></p><p><span>Standing charge</span><b>{money(estimate.standingCharge)}</b></p></div></div>
-        <div className="bill-arrow"><span>→</span><small>Solar effect</small></div>
-        <div className="bill-column after"><div className="bill-title"><span>Estimated</span><h3>With solar</h3></div><div className="bill-number"><strong>{money(estimate.effectiveBillAfter)}</strong><span>effective annual cost after export credit</span></div><div className="bill-lines"><p><span>Remaining grid import</span><b>{estimate.gridImportAfter.toLocaleString("en-GB")} kWh</b></p><p><span>Grid bill + standing charge</span><b>{money(estimate.gridBillAfter)}</b></p><p className="credit"><span>Estimated export income</span><b>− {money(estimate.exportIncome)}</b></p></div></div>
+      <div className="utility-card">
+        <div className="utility-intro"><span className="utility-icon">▰</span><h3>Utility costs</h3><p>How much could you save after installing solar?</p></div>
+        <div className="utility-table">
+          <div className="utility-head"><span/><b>Before solar</b><b>With solar</b></div>
+          <div className="utility-row"><span>Average monthly bill</span><strong>{money(estimate.currentBill / 12)}</strong><strong className="solar-cost">{money(estimate.effectiveBillAfter / 12)} <em>↓ {estimate.billReduction.toFixed(0)}%</em></strong></div>
+          <div className="utility-row annual"><span>Annual bill</span><div><strong>{money(estimate.currentBill)}</strong><small>Current estimated cost</small></div><div><strong className="solar-cost">{money(estimate.effectiveBillAfter)} <em>↓ {estimate.billReduction.toFixed(0)}%</em></strong><small>Est. annual savings {money(estimate.annualBenefit)}</small></div></div>
+        </div>
       </div>
+
+      <div className="bill-breakdown"><span>How we reached the solar figure</span><p><b>{estimate.gridImportAfter.toLocaleString("en-GB")} kWh</b> remaining grid import</p><p><b>{money(estimate.gridBillAfter)}</b> grid bill incl. standing charge</p><p className="credit"><b>− {money(estimate.exportIncome)}</b> estimated export income</p></div>
 
       <div className="energy-flow">
         <div><small>Used directly in your home</small><strong>{estimate.selfConsumed.toLocaleString("en-GB")} kWh</strong><span>{estimate.usageCovered.toFixed(0)}% of household use covered</span></div>
