@@ -275,11 +275,20 @@ export default function Home() {
 
   if (stage === "find") return <main>
     <nav className="nav"><Brand/><span className="nav-note">60-second solar estimate</span></nav>
-    <section className="hero">
+    <section className="statement-hero">
+      <div className="statement-copy">
+        <div className="eyebrow"><span/> Free UK home solar estimate</div>
+        <h1><span><b>1</b> postcode.</span><span><b>1</b> minute.</span><em>See what solar could save you.</em></h1>
+        <p>No quotation. No product price. Just a clear, address-led estimate.</p>
+        <a href="#assessment">Check my home <span>↓</span></a>
+      </div>
+      <div className="statement-orbit" aria-hidden="true"><i/><i/><i/></div>
+    </section>
+    <section className="hero" id="assessment">
       <div className="hero-copy">
         <div className="eyebrow"><span/> Free home assessment</div>
-        <h1>See what your roof could <em>save you.</em></h1>
-        <p className="lede">See your roof&apos;s solar potential, estimated yearly generation and possible electricity bill reduction — in under 60 seconds.</p>
+        <h2 className="assessment-title">Start with your postcode.</h2>
+        <p className="lede">We&apos;ll find your address, assess the roof and estimate the change to your yearly electricity bill.</p>
         <div className="hero-steps"><div><b>1</b><span><strong>Find your home</strong>Enter your postcode</span></div><i/><div><b>2</b><span><strong>See your roof</strong>Estimate panel capacity</span></div><i/><div><b>3</b><span><strong>See your savings</strong>Compare your yearly bill</span></div></div>
         <div className="finder">
           <label htmlFor="postcode">Enter your postcode</label>
