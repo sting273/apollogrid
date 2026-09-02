@@ -1,0 +1,11 @@
+import { ensureSchema } from "./runtime";
+
+export async function authorizeAdmin(user: { userId: string; email: string }, allowBootstrap = false) {
+  const db = await ensureSchema();
+  const count = await db.prepare("SELECT COUNT(*) AS count FROM admins").first<{ count: number }>();
+  if (allowBootstrap && Number(count?.count ?? 0) === 0) {
+    await db.prepare("INSERT OR IGNORE INTO admins (user_id, email) VALUES (?, ?)").bind(user.userId, user.email).run();
+  }
+  const admin = await db.prepare("SELECT user_id FROM admins WHERE user_id = ?").bind(user.userId).first();
+  return { allowed: Boolean(admin), db };
+}

@@ -118,12 +118,17 @@ export default function Home() {
   const [loadingRoof, setLoadingRoof] = useState(false);
   const [roofError, setRoofError] = useState("");
   const [usage, setUsage] = useState(5000);
+  const [usageBaseline, setUsageBaseline] = useState(5000);
   const [usageSource, setUsageSource] = useState<"desnz" | "manual" | "fallback">("fallback");
   const [editingUsage, setEditingUsage] = useState(false);
+  const [usageDraft, setUsageDraft] = useState("");
   const [panelOverride, setPanelOverride] = useState<number | null>(null);
   const [editingPanels, setEditingPanels] = useState(false);
   const [panelDraft, setPanelDraft] = useState("");
-  const [form, setForm] = useState({ phone: "", email: "", time: "" });
+  const [assessmentId, setAssessmentId] = useState<string | null>(null);
+  const [form, setForm] = useState({ name: "", phone: "", email: "", time: "", consent: false });
+  const [formError, setFormError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const estimate = useMemo(() => {
     const panelArea = PANEL.width * PANEL.height;
@@ -164,12 +169,17 @@ export default function Home() {
         setSearched(true);
         setPremise("");
         if (data.electricity?.medianKwh) {
-          setUsage(Math.round(data.electricity.medianKwh));
+          const baseline = Math.round(data.electricity.medianKwh);
+          setUsage(baseline);
+          setUsageBaseline(baseline);
           setUsageSource("desnz");
         } else {
           setUsage(5000);
+          setUsageBaseline(5000);
           setUsageSource("fallback");
         }
+        setEditingUsage(false);
+        setUsageDraft("");
       } catch (error) {
         if (!controller.signal.aborted) {
           setLookup(null);
@@ -212,8 +222,42 @@ export default function Home() {
     setPanelOverride(Math.max(1, Math.min(parsed, 60)));
     setEditingPanels(false);
   };
+  const editAnnualUsage = () => { setUsageDraft(String(usage)); setEditingUsage(true); };
+  const applyAnnualUsage = () => {
+    const parsed = Number.parseInt(usageDraft, 10);
+    if (!Number.isFinite(parsed)) return;
+    setUsage(Math.max(1000, Math.min(parsed, 30000)));
+    setUsageSource("manual");
+    setEditingUsage(false);
+  };
+  const resetAnnualUsage = () => {
+    setUsage(usageBaseline);
+    setUsageSource(lookup?.electricity ? "desnz" : "fallback");
+    setEditingUsage(false);
+    setUsageDraft("");
+  };
+  const calculateSavings = async () => {
+    go("result");
+    try {
+      const response = await fetch("/api/assessments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+        postcode: lookup?.postcode ?? postcode, address, annualUsageKwh: usage, usageSource, panelCount: estimate.panelCount, panelWatts: PANEL.watts,
+        systemKwp: estimate.systemKwp, annualGenerationKwh: estimate.deliveredGeneration, annualBillBefore: estimate.solarOnly.annualBillBefore,
+        annualBillSolarOnly: estimate.solarOnly.annualBillAfter, annualBillSolarBattery: estimate.solarBattery.annualBillAfter, annualBenefit: estimate.solarBattery.annualBenefit,
+      }) });
+      if (response.ok) setAssessmentId((await response.json() as { id: string }).id);
+    } catch { /* The calculator remains usable if analytics is temporarily unavailable. */ }
+  };
   const go = (next: Stage) => { setStage(next); window.scrollTo({ top: 0, behavior: "smooth" }); };
-  const submit = (e: FormEvent) => { e.preventDefault(); go("complete"); };
+  const submit = async (e: FormEvent) => {
+    e.preventDefault(); setSubmitting(true); setFormError("");
+    try {
+      const response = await fetch("/api/leads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assessmentId, customerName: form.name, phone: form.phone, email: form.email, preferredTime: form.time, consent: form.consent }) });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Unable to save your request.");
+      go("complete");
+    } catch (error) { setFormError(error instanceof Error ? error.message : "Unable to save your request."); }
+    finally { setSubmitting(false); }
+  };
 
   if (stage === "find") return <main>
     <nav className="nav"><Brand/><span className="nav-note">60-second solar estimate</span></nav>
@@ -253,8 +297,8 @@ export default function Home() {
           </div>
           <div className="panel-count-card"><div><span>Panels used in savings model</span><small>{panelOverride === null ? "Using the Google-based suggestion" : "Manual scenario override"}</small></div>{editingPanels ? <div className="panel-count-edit"><input aria-label="Panel count" type="number" min="1" max="60" inputMode="numeric" value={panelDraft} onChange={e => setPanelDraft(e.target.value)} onKeyDown={e => e.key === "Enter" && applyPanelCount()}/><span>panels</span><button onClick={applyPanelCount}>Use this</button></div> : <div className="panel-count-value"><strong>{estimate.panelCount}</strong><span>panels</span><button onClick={editPanelCount}>Edit</button>{panelOverride !== null && <button className="reset" onClick={() => setPanelOverride(null)}>Reset</button>}</div>}<p>{panelOverride !== null && solar && panelOverride > solar.maxPanels ? `Testing ${panelOverride} panels even though Google Solar returned ${solar.maxPanels}. Confirmed survey layouts can override the API estimate.` : "Change this when a survey, proposal or signed design confirms a different panel count."}</p></div>
           <div className="panel-spec"><div><span>Modelled system size</span><b>{estimate.systemKwp.toFixed(2)} kWp · {estimate.totalPanelArea.toFixed(1)}m²</b></div><div><span>{solar ? "Building-specific yield" : "Fallback annual yield"}</span><b>{estimate.annualYieldPerKwp} kWh/kWp</b></div></div>
-          <div className="energy-card"><div><span>Estimated annual electricity use</span><small>{usageSource === "desnz" && lookup?.electricity ? lookup.electricity.scope === "baseline" ? "2,000 kWh minimum planning baseline" : `${lookup.electricity.scope === "postcode" ? lookup.postcode : `${lookup.postcode.split(" ")[0]} area`} median · DESNZ ${lookup.electricity.year} · ${lookup.electricity.meters.toLocaleString("en-GB")} meters` : usageSource === "manual" ? "Customer-provided figure" : "National fallback estimate"}</small></div>{editingUsage ? <div className="usage-edit"><input type="number" min="1000" max="30000" value={usage} onChange={e => setUsage(Math.max(Number(e.target.value), 1))}/><span>kWh/year</span><button onClick={() => { setEditingUsage(false); setUsageSource("manual"); }}>Use this</button></div> : <div className="usage-value"><strong>{usage.toLocaleString("en-GB")}</strong><span>kWh/year</span><button onClick={() => setEditingUsage(true)}>Edit</button></div>}<p>{lookup?.electricity?.fallbackReason === "postcode_below_minimum" ? `${lookup.postcode} was below 2,000 kWh, so the wider ${lookup.postcode.split(" ")[0]} median is used.` : lookup?.electricity?.fallbackReason === "missing_postcode" ? "No postcode row was published, so the wider postcode-area median is used." : lookup?.electricity?.fallbackReason === "outcode_below_minimum" ? "Both postcode levels were below 2,000 kWh, so the minimum planning baseline is used." : usageSource === "desnz" && lookup?.electricity && lookup.electricity.scope === "postcode" && lookup.electricity.meters < 10 ? "Small postcode sample: use the customer’s actual bill where available." : "Use this local estimate or replace it with the customer’s actual annual electricity usage."}</p></div>
-          <button className="primary full" onClick={() => go("result")}>Calculate my yearly savings <span>→</span></button>
+          <div className="energy-card"><div><span>Annual electricity use in savings model</span><small>{usageSource === "desnz" && lookup?.electricity ? lookup.electricity.scope === "baseline" ? "2,000 kWh minimum planning baseline" : `${lookup.electricity.scope === "postcode" ? lookup.postcode : `${lookup.postcode.split(" ")[0]} area`} median · DESNZ ${lookup.electricity.year} · ${lookup.electricity.meters.toLocaleString("en-GB")} meters` : usageSource === "manual" ? "Customer-provided figure · calculations updated" : "National fallback estimate"}</small></div>{editingUsage ? <div className="usage-edit"><input aria-label="Annual electricity use" type="number" min="1000" max="30000" step="100" inputMode="numeric" value={usageDraft} onChange={e => setUsageDraft(e.target.value)} onKeyDown={e => e.key === "Enter" && applyAnnualUsage()}/><span>kWh/year</span><button onClick={applyAnnualUsage}>Use this</button></div> : <div className="usage-value"><strong>{usage.toLocaleString("en-GB")}</strong><span>kWh/year</span><button onClick={editAnnualUsage}>Edit</button>{usageSource === "manual" && <button className="reset" onClick={resetAnnualUsage}>Reset</button>}</div>}<p>{usageSource === "manual" ? `Using the customer figure. Reset to ${usageBaseline.toLocaleString("en-GB")} kWh/year to use the published estimate again.` : lookup?.electricity?.fallbackReason === "postcode_below_minimum" ? `${lookup.postcode} was below 2,000 kWh, so the wider ${lookup.postcode.split(" ")[0]} median is used.` : lookup?.electricity?.fallbackReason === "missing_postcode" ? "No postcode row was published, so the wider postcode-area median is used." : lookup?.electricity?.fallbackReason === "outcode_below_minimum" ? "Both postcode levels were below 2,000 kWh, so the minimum planning baseline is used." : usageSource === "desnz" && lookup?.electricity && lookup.electricity.scope === "postcode" && lookup.electricity.meters < 10 ? "Small postcode sample: use the customer’s actual bill where available." : "Replace this estimate with the annual kWh shown on the customer’s electricity bill."}</p></div>
+          <button className="primary full" onClick={calculateSavings}>Calculate my yearly savings <span>→</span></button>
           <p className="fineprint">{solar ? "Roof and solar data © Google Maps. Final capacity requires a technical survey." : "Indicative assessment only. Final roof capacity and annual generation require detailed solar and technical data."}</p>
         </div>
       </div>
@@ -304,9 +348,9 @@ export default function Home() {
     <nav className="nav"><Brand/><button className="text-button" onClick={() => go("result")}>← Back to results</button></nav>
     <section className="booking-step">
       <div className="booking-summary"><div className="eyebrow"><span/> Your solar potential</div><h2>Ready to confirm your roof?</h2><p>A free on-site survey confirms roof capacity, shading, electrical setup and a more accurate generation estimate.</p><div className="summary-card"><small>{solar ? "Google Solar building assessment" : "Indicative roof assessment"}</small><h3>{estimate.panelCount} × {PANEL.watts}W panels</h3><div><span>System potential</span><b>{estimate.systemKwp.toFixed(2)} kWp</b></div><div><span>Usable annual generation</span><b>{estimate.deliveredGeneration.toLocaleString("en-GB")} kWh</b></div><div><span>Solar + battery benefit</span><b>{money(estimate.solarBattery.annualBenefit)}</b></div></div><p className="address-note">⌖ {address}</p></div>
-      <form className="booking-form" onSubmit={submit}><span className="form-kicker">Free technical survey</span><h3>Where should we contact you?</h3><p>No lengthy form. Just the details needed to arrange your visit.</p><label>Phone number <b>*</b><input required type="tel" placeholder="e.g. 07700 900000" value={form.phone} onChange={e => setForm({...form, phone:e.target.value})}/></label><label>Email address <b>*</b><input required type="email" placeholder="you@example.com" value={form.email} onChange={e => setForm({...form, email:e.target.value})}/></label><label>Preferred survey time <small>Optional</small><input placeholder="e.g. Weekday mornings" value={form.time} onChange={e => setForm({...form, time:e.target.value})}/></label><label className="consent"><input required type="checkbox"/><span>I agree to be contacted about this solar assessment and survey.</span></label><button className="primary full" type="submit">Book my free survey <span>→</span></button><small className="privacy">Your details are used only to arrange your solar consultation.</small></form>
+      <form className="booking-form" onSubmit={submit}><span className="form-kicker">Free technical survey</span><h3>Where should we contact you?</h3><p>No lengthy form. Just the details needed to arrange your visit.</p><label>Name <b>*</b><input required autoComplete="name" placeholder="Your name" value={form.name} onChange={e => setForm({...form, name:e.target.value})}/></label><label>Phone number <b>*</b><input required type="tel" autoComplete="tel" placeholder="e.g. 07700 900000" value={form.phone} onChange={e => setForm({...form, phone:e.target.value})}/></label><label>Email address <b>*</b><input required type="email" autoComplete="email" placeholder="you@example.com" value={form.email} onChange={e => setForm({...form, email:e.target.value})}/></label><label>Preferred survey time <small>Optional</small><input placeholder="e.g. Weekday mornings" value={form.time} onChange={e => setForm({...form, time:e.target.value})}/></label><label className="consent"><input required type="checkbox" checked={form.consent} onChange={e => setForm({...form, consent:e.target.checked})}/><span>I agree to be contacted about this solar assessment and survey.</span></label>{formError && <div className="lookup-error">{formError}</div>}<button className="primary full" type="submit" disabled={submitting}>{submitting ? "Saving…" : "Book my free survey"} <span>→</span></button><small className="privacy">Your details are stored securely and used only to arrange your solar consultation.</small></form>
     </section>
   </main>;
 
-  return <main className="complete"><div className="complete-mark">✓</div><div className="eyebrow"><span/> Survey request received</div><h2>Your roof is one step closer.</h2><p>We&apos;ll contact you using the details provided to arrange the free technical survey for:</p><strong>{address}</strong><div className="next-steps"><div><b>1</b><span><strong>We call or email</strong>Confirm a suitable appointment</span></div><div><b>2</b><span><strong>Technical survey</strong>Check roof capacity and shading</span></div><div><b>3</b><span><strong>Your accurate assessment</strong>Confirm generation, savings and options</span></div></div><button className="secondary" onClick={() => window.location.reload()}>Start another assessment</button><small>This is a demo — no information has been sent.</small></main>;
+  return <main className="complete"><div className="complete-mark">✓</div><div className="eyebrow"><span/> Survey request received</div><h2>Your roof is one step closer.</h2><p>We&apos;ll contact you using the details provided to arrange the free technical survey for:</p><strong>{address}</strong><div className="next-steps"><div><b>1</b><span><strong>We call or email</strong>Confirm a suitable appointment</span></div><div><b>2</b><span><strong>Technical survey</strong>Check roof capacity and shading</span></div><div><b>3</b><span><strong>Your accurate assessment</strong>Confirm generation, savings and options</span></div></div><button className="secondary" onClick={() => window.location.reload()}>Start another assessment</button><small>Your request has been saved for the Apollogrid team.</small></main>;
 }
