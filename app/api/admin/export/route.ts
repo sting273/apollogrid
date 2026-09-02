@@ -15,7 +15,7 @@ export async function GET() {
   const [assessments, leads, comparisons, apiUsage] = await Promise.all([
     db.prepare("SELECT * FROM assessments ORDER BY created_at DESC").all<Record<string, unknown>>(),
     db.prepare("SELECT l.*, a.address, a.postcode FROM leads l LEFT JOIN assessments a ON a.id=l.assessment_id ORDER BY l.created_at DESC").all<Record<string, unknown>>(),
-    db.prepare("SELECT p.*, a.address, a.postcode, a.annual_usage_kwh our_usage_kwh, a.panel_count our_panel_count, a.annual_generation_kwh our_generation_kwh, a.annual_bill_before our_bill_before, a.annual_bill_solar_battery our_bill_after, a.annual_benefit our_benefit, (p.pylon_bill_before-p.pylon_bill_after) pylon_benefit FROM pylon_comparisons p JOIN assessments a ON a.id=p.assessment_id ORDER BY p.created_at DESC").all<Record<string, unknown>>(),
+    db.prepare("SELECT p.*, a.address, a.postcode, a.annual_usage_kwh our_usage_kwh, a.panel_count our_panel_count, a.annual_generation_kwh our_generation_kwh, a.annual_bill_before our_bill_before, a.annual_bill_solar_battery our_bill_after, a.annual_benefit our_benefit, (p.pylon_bill_before-p.pylon_bill_after) pylon_benefit FROM pylon_comparisons p JOIN (SELECT assessment_id,proposal_url,MAX(rowid) latest_rowid FROM pylon_comparisons GROUP BY assessment_id,proposal_url) latest ON latest.latest_rowid=p.rowid JOIN assessments a ON a.id=p.assessment_id ORDER BY p.created_at DESC").all<Record<string, unknown>>(),
     db.prepare("SELECT * FROM api_usage_events ORDER BY created_at DESC").all<Record<string, unknown>>(),
   ]);
   const toRows = (records: Record<string, unknown>[], headers: string[], numeric: Set<string>) => records.map(record => headers.map(key => ({ value: record[key], numeric: numeric.has(key) })));

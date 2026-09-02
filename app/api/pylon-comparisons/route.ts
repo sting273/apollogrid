@@ -20,8 +20,11 @@ export async function POST(request: Request) {
   const pylonBenefit = pylonBefore - pylonAfter;
   const benefitHit = hitRate(assessment.annual_benefit, pylonBenefit);
   const overallHit = inputHit * 0.2 + generationHit * 0.4 + benefitHit * 0.4;
-  const id = crypto.randomUUID();
-  await db.prepare(`INSERT INTO pylon_comparisons (id, assessment_id, proposal_url, pylon_annual_usage_kwh, pylon_panel_count, pylon_generation_kwh, pylon_bill_before, pylon_bill_after, input_hit_rate, generation_hit_rate, benefit_hit_rate, overall_hit_rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .bind(id, assessmentId, String(body.proposalUrl ?? "").slice(0, 500), pylonUsage, pylonPanels, pylonGeneration, pylonBefore, pylonAfter, inputHit, generationHit, benefitHit, overallHit).run();
-  return Response.json({ id, inputHit, generationHit, benefitHit, overallHit }, { status: 201 });
+  const proposalUrl = String(body.proposalUrl ?? "").slice(0, 500);
+  const existing = await db.prepare("SELECT id FROM pylon_comparisons WHERE assessment_id = ? AND proposal_url = ? LIMIT 1")
+    .bind(assessmentId, proposalUrl).first<{ id: string }>();
+  const id = existing?.id ?? crypto.randomUUID();
+  await db.prepare(`INSERT INTO pylon_comparisons (id, assessment_id, proposal_url, pylon_annual_usage_kwh, pylon_panel_count, pylon_generation_kwh, pylon_bill_before, pylon_bill_after, input_hit_rate, generation_hit_rate, benefit_hit_rate, overall_hit_rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(assessment_id, proposal_url) DO UPDATE SET pylon_annual_usage_kwh=excluded.pylon_annual_usage_kwh, pylon_panel_count=excluded.pylon_panel_count, pylon_generation_kwh=excluded.pylon_generation_kwh, pylon_bill_before=excluded.pylon_bill_before, pylon_bill_after=excluded.pylon_bill_after, input_hit_rate=excluded.input_hit_rate, generation_hit_rate=excluded.generation_hit_rate, benefit_hit_rate=excluded.benefit_hit_rate, overall_hit_rate=excluded.overall_hit_rate, created_at=CURRENT_TIMESTAMP`)
+    .bind(id, assessmentId, proposalUrl, pylonUsage, pylonPanels, pylonGeneration, pylonBefore, pylonAfter, inputHit, generationHit, benefitHit, overallHit).run();
+  return Response.json({ id, inputHit, generationHit, benefitHit, overallHit }, { status: existing ? 200 : 201 });
 }

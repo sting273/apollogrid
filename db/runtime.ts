@@ -17,6 +17,8 @@ export async function ensureSchema() {
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_assessments_postcode ON assessments(postcode)`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_leads_assessment_id ON leads(assessment_id)`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_comparisons_assessment_id ON pylon_comparisons(assessment_id)`),
+    db.prepare(`DELETE FROM pylon_comparisons WHERE rowid NOT IN (SELECT MAX(rowid) FROM pylon_comparisons GROUP BY assessment_id, proposal_url)`),
+    db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_comparisons_assessment_url ON pylon_comparisons(assessment_id, proposal_url)`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_api_usage_created_at ON api_usage_events(created_at)`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_api_usage_provider_created_at ON api_usage_events(provider, created_at)`),
   ]);
