@@ -276,11 +276,20 @@ export default function Home() {
   if (stage === "find") return <main>
     <nav className="nav"><Brand/><span className="nav-note">60-second solar estimate</span></nav>
     <section className="statement-hero">
-      <div className="statement-copy">
-        <div className="eyebrow"><span/> Free UK home solar estimate</div>
-        <h1><span><b>1</b> postcode.</span><span><b>1</b> minute.</span><em>See what solar could save you.</em></h1>
-        <p>No quotation. No product price. Just a clear, address-led estimate.</p>
-        <a href="#assessment">Check my home <span>↓</span></a>
+      <div className="statement-layout">
+        <div className="statement-copy">
+          <div className="eyebrow"><span/> Free UK home solar estimate</div>
+          <h1><span><b>1</b> postcode.</span><span><b>1</b> minute.</span><em>See what solar could save you.</em></h1>
+          <p>No quotation. No product price. Just a clear, address-led estimate.</p>
+          <a href="#assessment">Check my home <span>↓</span></a>
+        </div>
+        <aside className="proof-card" aria-label="Example solar savings assessment">
+          <header><div><span>EXAMPLE ASSESSMENT</span><b>Typical London home</b></div><i>LIVE MODEL</i></header>
+          <div className="proof-saving"><small>Estimated annual benefit</small><strong>{money(estimate.solarBattery.annualBenefit)}</strong><span>per year with solar + battery</span></div>
+          <div className="proof-roof"><div>{Array.from({ length: 12 }).map((_, i) => <i key={i}/>)}</div><span>Indicative roof layout</span></div>
+          <div className="proof-stats"><div><small>Solar panels</small><b>{estimate.panelCount} × {PANEL.watts}W</b></div><div><small>Usable generation</small><b>{estimate.deliveredGeneration.toLocaleString("en-GB")} kWh</b></div><div><small>Bill reduction</small><b>{estimate.solarBattery.billReduction.toFixed(0)}%</b></div></div>
+          <footer>Illustrative result using the same conservative model as your assessment.</footer>
+        </aside>
       </div>
       <div className="statement-orbit" aria-hidden="true"><i/><i/><i/></div>
     </section>
