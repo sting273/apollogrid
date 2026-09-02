@@ -147,6 +147,24 @@ export default function Home() {
     return { panelArea, panelCount, suggestedPanelCount, annualYieldPerKwp, totalPanelArea, efficiency, systemKwp, dcGeneration, deliveredGeneration, solarOnly, solarBattery, projection };
   }, [usage, solar, panelOverride]);
 
+  const persistAssessment = async (id: string) => {
+    const response = await fetch("/api/assessments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+      id, postcode: lookup?.postcode ?? postcode, address, annualUsageKwh: usage, usageSource, panelCount: estimate.panelCount, panelWatts: PANEL.watts,
+      systemKwp: estimate.systemKwp, annualGenerationKwh: estimate.deliveredGeneration, annualBillBefore: estimate.solarOnly.annualBillBefore,
+      annualBillSolarOnly: estimate.solarOnly.annualBillAfter, annualBillSolarBattery: estimate.solarBattery.annualBillAfter, annualBenefit: estimate.solarBattery.annualBenefit,
+    }) });
+    if (!response.ok) throw new Error("Unable to save assessment.");
+    const payload = await response.json() as { id: string };
+    if (payload.id !== assessmentId) setAssessmentId(payload.id);
+    return payload.id;
+  };
+
+  useEffect(() => {
+    if (stage !== "roof" || loadingRoof || !assessmentId) return;
+    const timer = window.setTimeout(() => { persistAssessment(assessmentId).catch(() => undefined); }, 350);
+    return () => window.clearTimeout(timer);
+  }, [stage, loadingRoof, assessmentId, address, usage, usageSource, estimate.panelCount, estimate.deliveredGeneration, estimate.solarOnly.annualBillBefore, estimate.solarOnly.annualBillAfter, estimate.solarBattery.annualBillAfter, estimate.solarBattery.annualBenefit]);
+
   useEffect(() => {
     const compact = postcode.toUpperCase().replace(/[^A-Z0-9]/g, "");
     if (!/^[A-Z]{1,2}\d[A-Z\d]?\d[A-Z]{2}$/.test(compact)) return;
@@ -196,6 +214,7 @@ export default function Home() {
   const findHome = () => { if (lookup) setSearched(true); };
   const chooseAddress = async (item: AddressOption) => {
     setAddress(item.formatted);
+    setAssessmentId(crypto.randomUUID());
     setPanelOverride(null);
     setEditingPanels(false);
     setPanelDraft("");
@@ -239,12 +258,7 @@ export default function Home() {
   const calculateSavings = async () => {
     go("result");
     try {
-      const response = await fetch("/api/assessments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-        postcode: lookup?.postcode ?? postcode, address, annualUsageKwh: usage, usageSource, panelCount: estimate.panelCount, panelWatts: PANEL.watts,
-        systemKwp: estimate.systemKwp, annualGenerationKwh: estimate.deliveredGeneration, annualBillBefore: estimate.solarOnly.annualBillBefore,
-        annualBillSolarOnly: estimate.solarOnly.annualBillAfter, annualBillSolarBattery: estimate.solarBattery.annualBillAfter, annualBenefit: estimate.solarBattery.annualBenefit,
-      }) });
-      if (response.ok) setAssessmentId((await response.json() as { id: string }).id);
+      await persistAssessment(assessmentId ?? crypto.randomUUID());
     } catch { /* The calculator remains usable if analytics is temporarily unavailable. */ }
   };
   const go = (next: Stage) => { setStage(next); window.scrollTo({ top: 0, behavior: "smooth" }); };
