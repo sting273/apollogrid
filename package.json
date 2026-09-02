@@ -11,6 +11,7 @@
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "pnpm build && node --test tests/*.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "calibrate:pylon": "node scripts/run-pylon-calibration.mjs",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {

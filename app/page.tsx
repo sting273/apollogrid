@@ -284,11 +284,11 @@ export default function Home() {
           <a href="#assessment">Check my home <span>↓</span></a>
         </div>
         <aside className="proof-card" aria-label="Example solar savings assessment">
-          <header><div><span>EXAMPLE ASSESSMENT</span><b>Typical London home</b></div><i>LIVE MODEL</i></header>
-          <div className="proof-saving"><small>Estimated annual benefit</small><strong>{money(estimate.solarBattery.annualBenefit)}</strong><span>per year with solar + battery</span></div>
-          <div className="proof-roof"><div>{Array.from({ length: 12 }).map((_, i) => <i key={i}/>)}</div><span>Indicative roof layout</span></div>
-          <div className="proof-stats"><div><small>Solar panels</small><b>{estimate.panelCount} × {PANEL.watts}W</b></div><div><small>Usable generation</small><b>{estimate.deliveredGeneration.toLocaleString("en-GB")} kWh</b></div><div><small>Bill reduction</small><b>{estimate.solarBattery.billReduction.toFixed(0)}%</b></div></div>
-          <footer>Illustrative result using the same conservative model as your assessment.</footer>
+          <header><div><span>REAL APOLLOGRID CASE</span><b>Orpington · BR5</b></div><i>10 PANELS</i></header>
+          <div className="proof-saving"><small>Modelled first-year benefit</small><strong>£1,085</strong><span>with solar + 10.24kWh battery</span></div>
+          <div className="proof-roof"><img src="/case-orpington-roof.jpeg" alt="Aerial roof layout from an Apollogrid solar project in Orpington"/><span>Apollogrid project · roof layout</span></div>
+          <div className="proof-stats"><div><small>Solar panels</small><b>10 × 460W</b></div><div><small>Annual generation</small><b>4,867 kWh</b></div><div><small>After-solar bill</small><b>£46 credit</b></div></div>
+          <footer>Figures shown are from the customer&apos;s Pylon proposal. Every home is assessed separately.</footer>
         </aside>
       </div>
       <div className="statement-orbit" aria-hidden="true"><i/><i/><i/></div>
