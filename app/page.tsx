@@ -176,7 +176,7 @@ export default function Home() {
         const response = await fetch(`/api/assessment?postcode=${encodeURIComponent(compact)}`, { signal: controller.signal, cache: "no-store" });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "Unable to load postcode data.");
-        const raw = payload as Lookup & { addressLookup: { configured: boolean; addresses: Array<AddressOption | string> } };
+        const raw = payload as Omit<Lookup, "addressLookup"> & { addressLookup: { configured: boolean; addresses: Array<AddressOption | string> } };
         const addresses = raw.addressLookup.addresses.flatMap((item) => {
           if (typeof item === "string") return item.trim() ? [{ formatted: item, latitude: raw.latitude, longitude: raw.longitude }] : [];
           return item?.formatted?.trim() ? [item] : [];

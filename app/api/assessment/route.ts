@@ -1,3 +1,5 @@
+import { recordApiUsage } from "../../../db/runtime";
+
 const DESNZ_CSV = "https://assets.publishing.service.gov.uk/media/694282a1fdbd8404f9e1f1da/Postcode_level_all_meters_electricity_2024.csv";
 const DESNZ_CSV_BYTES = 80_494_341;
 const MINIMUM_REFERENCE_KWH = 2_000;
@@ -100,6 +102,7 @@ async function lookupAddresses(postcode: string, fallbackLatitude: number, fallb
   if (!apiKey) return { configured: false, addresses: [] as AddressResult[] };
 
   const response = await fetch(`https://api.ideal-postcodes.co.uk/v1/postcodes/${encodeURIComponent(postcode)}?api_key=${encodeURIComponent(apiKey)}`);
+  await recordApiUsage("Ideal Postcodes", "Address lookup", response.status, response.ok);
   if (!response.ok) return { configured: true, addresses: [] as AddressResult[] };
   const payload = await response.json() as { result?: Array<{ line_1?: string; line_2?: string; line_3?: string; post_town?: string; postcode?: string; latitude?: number; longitude?: number }> };
   const addresses = (payload.result ?? []).map((item) => {
@@ -121,6 +124,7 @@ export async function GET(request: Request) {
   }
 
   const locationResponse = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(postcode)}`);
+  await recordApiUsage("Postcodes.io", "Postcode geocoding", locationResponse.status, locationResponse.ok);
   if (!locationResponse.ok) return Response.json({ error: "We could not find that postcode." }, { status: 404 });
   const locationPayload = await locationResponse.json() as { result: { postcode: string; latitude: number; longitude: number; region: string | null; admin_district: string | null } };
 
@@ -128,6 +132,7 @@ export async function GET(request: Request) {
     lookupElectricity(locationPayload.result.postcode).catch(() => null),
     lookupAddresses(locationPayload.result.postcode, locationPayload.result.latitude, locationPayload.result.longitude).catch(() => ({ configured: Boolean(process.env.IDEAL_POSTCODES_API_KEY), addresses: [] as AddressResult[] })),
   ]);
+  await recordApiUsage("DESNZ", "2024 postcode electricity dataset", electricity ? 200 : 404, Boolean(electricity));
 
   return Response.json({
     postcode: locationPayload.result.postcode,

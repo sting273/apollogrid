@@ -1,3 +1,5 @@
+import { recordApiUsage } from "../../../../db/runtime";
+
 type DataLayersResponse = {
   rgbUrl?: string;
   error?: { message?: string };
@@ -24,6 +26,7 @@ export async function GET(request: Request) {
     key: apiKey,
   });
   const layerResponse = await fetch(`https://solar.googleapis.com/v1/dataLayers:get?${layerParams}`, { cache: "no-store" });
+  await recordApiUsage("Google Solar", "Data Layers", layerResponse.status, layerResponse.ok);
   const layers = await layerResponse.json() as DataLayersResponse;
   if (!layerResponse.ok || !layers.rgbUrl) {
     return Response.json({ error: layers.error?.message ?? "Google Solar imagery was unavailable." }, { status: layerResponse.status || 404 });
@@ -32,6 +35,7 @@ export async function GET(request: Request) {
   const imageryUrl = new URL(layers.rgbUrl);
   imageryUrl.searchParams.set("key", apiKey);
   const imageryResponse = await fetch(imageryUrl, { cache: "no-store" });
+  await recordApiUsage("Google Solar", "Imagery download", imageryResponse.status, imageryResponse.ok);
   if (!imageryResponse.ok) {
     return Response.json({ error: "Google Solar imagery could not be downloaded." }, { status: imageryResponse.status });
   }

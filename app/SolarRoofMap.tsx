@@ -56,7 +56,9 @@ export default function SolarRoofMap({ imageryUrl, panels, panelCount, label }: 
         }
         context.putImageData(pixels, 0, 0);
 
-        const projectionData = toProj4(image.getGeoKeys());
+        const geoKeys = image.getGeoKeys();
+        if (!geoKeys) throw new Error("Solar imagery projection metadata is unavailable.");
+        const projectionData = toProj4(geoKeys);
         const projection = proj4(projectionData.proj4, "WGS84");
         const box = image.getBoundingBox();
         const convert = (x: number, y: number) => projection.forward({

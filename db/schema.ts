@@ -50,3 +50,12 @@ export const admins = sqliteTable("admins", {
   email: text("email").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const apiUsageEvents = sqliteTable("api_usage_events", {
+  id: text("id").primaryKey(),
+  provider: text("provider").notNull(),
+  endpoint: text("endpoint").notNull(),
+  statusCode: integer("status_code").notNull(),
+  success: integer("success", { mode: "boolean" }).notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});

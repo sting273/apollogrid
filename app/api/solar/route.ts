@@ -1,3 +1,5 @@
+import { recordApiUsage } from "../../../db/runtime";
+
 const PANEL_WATTS = 490;
 const PANEL_AREA_METERS2 = 1.8 * 1.13;
 
@@ -49,6 +51,7 @@ export async function GET(request: Request) {
     key: apiKey,
   });
   const response = await fetch(`https://solar.googleapis.com/v1/buildingInsights:findClosest?${googleParams}`, { cache: "no-store" });
+  await recordApiUsage("Google Solar", "Building Insights", response.status, response.ok);
   const payload = await response.json() as GoogleSolarResponse;
   if (!response.ok || !payload.solarPotential) {
     return Response.json({ error: payload.error?.message ?? "No Google Solar building match was found." }, { status: response.status || 404 });
