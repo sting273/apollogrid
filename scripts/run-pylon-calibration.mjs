@@ -115,7 +115,7 @@ async function calibrate(proposalUrl) {
   return {
     proposalUrl, address, postcode, matchedAddress: matchedAddress.formatted, comparisonStatus: pylonPanels ? "Full solar + battery comparison" : "Partial comparison: battery-only Pylon proposal",
     solarSource, usageSource: lookup.electricity ? `${lookup.electricity.scope} · DESNZ ${lookup.electricity.year}` : "fallback",
-    pylon: { annualUsageKwh: pylonUsage, panelCount: pylonPanels, systemKwp: Number(proposal.size || 0), batteryKwh: Number(proposal.storage_size || 0), annualGenerationKwh: pylonGeneration, annualBillBefore: pylonBillBefore, annualBillAfter: pylonBillAfter, annualBenefit: pylonBenefit, caseImageUrl: proposal.snapshots?.string || "" },
+    pylon: { annualUsageKwh: pylonUsage, panelCount: pylonPanels, systemKwp: Number(proposal.size || 0), batteryKwh: Number(proposal.storage_size || 0), annualGenerationKwh: pylonGeneration, annualBillBefore: pylonBillBefore, annualBillAfter: pylonBillAfter, annualBenefit: pylonBenefit, caseImageUrl: proposal.snapshots?.string?.replace("-annotations.jpeg", "-layout.jpeg") || "" },
     ours: { annualUsageKwh: ourUsage, panelCount: ourPanels, panelWatts: 490, systemKwp: ourPanels * 0.49, annualGenerationKwh: ourGeneration, annualBillBefore: ourEnergy.annualBillBefore, annualBillAfter: ourEnergy.annualBillAfter, annualBenefit: ourEnergy.annualBenefit },
     hitRates: { usage: usageHit, panels: panelHit, input: inputHit, generation: generationHit, benefit: benefitHit, overall: overallHit },
   };
