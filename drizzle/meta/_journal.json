@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1788343920436,
+      "tag": "0000_robust_christian_walker",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788348110048,
+      "tag": "0001_eager_newton_destine",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789857121528,
+      "tag": "0002_pale_ares",
+      "breakpoints": true
+    }
+  ]
+}
