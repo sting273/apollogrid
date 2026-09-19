@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 
-type ProviderSecret = "IDEAL_POSTCODES_API_KEY" | "GOOGLE_MAPS_API_KEY" | "ADMIN_EMAILS";
+type ProviderSecret = "IDEAL_POSTCODES_API_KEY" | "GOOGLE_MAPS_API_KEY" | "ADMIN_EMAILS" | "MIGRATION_TOKEN";
 
 // Read worker bindings directly as well as Node compatibility environment.
 // Values remain on the server and must never be returned to the browser.
