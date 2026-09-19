@@ -1,6 +1,7 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import { sendDailyBackup } from "./backup";
 
 interface Env {
   ASSETS: Fetcher;
@@ -12,6 +13,9 @@ interface Env {
       };
     };
   };
+  RESEND_API_KEY?: string;
+  BACKUP_EMAIL_TO?: string;
+  BACKUP_FROM_EMAIL?: string;
 }
 
 interface ExecutionContext {
@@ -41,6 +45,9 @@ const worker = {
     }
 
     return handler.fetch(request, env, ctx);
+  },
+  async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(sendDailyBackup(env));
   },
 };
 

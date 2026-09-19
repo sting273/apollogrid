@@ -13,6 +13,8 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "calibrate:pylon": "node scripts/run-pylon-calibration.mjs",
     "db:generate": "drizzle-kit generate"
+    ,"cf:prepare": "node scripts/prepare-cloudflare-deploy.mjs"
+    ,"cf:deploy": "npm run build && npm run cf:prepare && wrangler deploy --config dist/server/wrangler.json"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",
