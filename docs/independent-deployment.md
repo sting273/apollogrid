@@ -16,7 +16,7 @@ This runbook moves ApolloGrid from ChatGPT Sites to an independently owned Cloud
 3. Apply the immutable SQL migrations in `drizzle/` to the new database.
 4. Import the verified export from the current hosted D1.
 5. Add Worker secrets: `IDEAL_POSTCODES_API_KEY`, `GOOGLE_MAPS_API_KEY`, `ADMIN_EMAILS`, `RESEND_API_KEY`, `BACKUP_EMAIL_TO`, and `BACKUP_FROM_EMAIL`.
-6. Set `CF_D1_DATABASE_ID` and run `npm run cf:deploy`. The deployment script prepares the generated Worker config, disables the bypassable `workers.dev` address, and installs the daily backup cron. Bind the custom domain, then verify customer calculation plus admin export.
+6. Set `CF_D1_DATABASE_ID`, `CF_CUSTOM_DOMAIN`, and run `npm run cf:deploy`. The deployment script prepares the generated Worker config, disables the bypassable `workers.dev` address, creates the custom domain, and installs the daily backup cron. Then verify customer calculation plus admin export.
 
 ## Backups
 

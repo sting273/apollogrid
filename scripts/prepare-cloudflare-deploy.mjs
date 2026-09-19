@@ -9,5 +9,8 @@ config.name = process.env.CF_WORKER_NAME || "apollogrid";
 config.workers_dev = false;
 config.triggers = { crons: ["15 1 * * *"] };
 config.d1_databases = [{ binding: "DB", database_name: "apollogrid", database_id: databaseId }];
+if (process.env.CF_CUSTOM_DOMAIN) {
+  config.routes = [{ pattern: process.env.CF_CUSTOM_DOMAIN, custom_domain: true }];
+}
 await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
 console.log(`Prepared ${config.name} for Cloudflare with its daily backup cron.`);
