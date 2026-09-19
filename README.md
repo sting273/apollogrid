@@ -33,6 +33,24 @@ ADMIN_EMAILS=owner@example.com
 
 The `/admin` route asks the operator to sign in with ChatGPT and allows only an address in `ADMIN_EMAILS`. The public calculator does not require sign-in.
 
+## Moving to another Mac or PC
+
+Sign in to Codex with the same ChatGPT account, then clone the private repository and open the cloned folder in Codex:
+
+```bash
+git clone https://github.com/sting273/apollogrid.git
+cd apollogrid
+npm ci
+cp .env.example .env
+npm run dev
+```
+
+On Windows PowerShell, replace `cp .env.example .env` with `Copy-Item .env.example .env`.
+
+For local postcode and Google Solar lookups, put the provider keys in that device's untracked `.env` file. Do not copy or commit `.env` to GitHub. The hosted site already has its own secrets and runs independently at the production URL.
+
+All customer measurements and bookings made through the hosted site go to Cloudflare D1 immediately. GitHub stores source code and migration history; it is not the customer-data transport. Open the hosted `/admin` page on any signed-in device to see the shared records.
+
 ## Verification
 
 ```bash
