@@ -7,7 +7,7 @@ This runbook moves ApolloGrid from ChatGPT Sites to an independently owned Cloud
 1. Create a Cloudflare account and give Codex a browser login to it.
 2. Create or choose a domain. Use a domain you control for production; do not use a `workers.dev` address for the admin dashboard.
 3. Create a Resend account, verify a sender domain, and provide the API key plus the backup recipient address.
-4. In Cloudflare Zero Trust, protect `/admin*` and `/api/admin/*` with an email one-time-passcode policy for the owner's email address.
+4. In Cloudflare Zero Trust, protect `/admin*`, `/api/admin/*`, `/api/pylon-*` with an email one-time-passcode policy for the owner's email address. The application accepts the Cloudflare Access identity header only after that edge policy authorizes the request.
 
 ## Deployment sequence
 

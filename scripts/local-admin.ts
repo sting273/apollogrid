@@ -1,7 +1,7 @@
 import type { Plugin } from "vite";
 
-// The hosted authentication remains unchanged. Only the loopback dev server
-// supplies a local identity, before requests enter the Cloudflare worker.
+// Only the loopback dev server supplies a local identity before requests enter
+// the Worker. Production uses ChatGPT Sites or Cloudflare Access at the edge.
 export function localAdmin(): Plugin {
   return {
     name: "apollogrid-local-admin",
