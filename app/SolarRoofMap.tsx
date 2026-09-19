@@ -56,41 +56,37 @@ export default function SolarRoofMap({ imageryUrl, panels, panelCount, label }: 
         }
         context.putImageData(pixels, 0, 0);
 
-        const geoKeys = image.getGeoKeys();
-        if (!geoKeys) throw new Error("Solar imagery projection metadata is unavailable.");
-        const projectionData = toProj4(geoKeys);
-        const projection = proj4(projectionData.proj4, "WGS84");
-        const box = image.getBoundingBox();
-        const convert = (x: number, y: number) => projection.forward({
-          x: x * projectionData.conversionParameters.x,
-          y: y * projectionData.conversionParameters.y,
-        });
-        const southWest = convert(box[0], box[1]);
-        const northEast = convert(box[2], box[3]);
-        const west = Math.min(southWest.x, northEast.x);
-        const east = Math.max(southWest.x, northEast.x);
-        const south = Math.min(southWest.y, northEast.y);
-        const north = Math.max(southWest.y, northEast.y);
-        const horizontalMeters = Math.max((east - west) * 111_320 * Math.cos(((north + south) / 2) * Math.PI / 180), 1);
-        const verticalMeters = Math.max((north - south) * 111_320, 1);
-        const panelWidthPixels = 1.13 / horizontalMeters * width;
-        const panelHeightPixels = 1.8 / verticalMeters * height;
-
-        for (const panel of panels.slice(0, panelCount)) {
-          const x = (panel.center.longitude - west) / (east - west) * width;
-          const y = (north - panel.center.latitude) / (north - south) * height;
-          const landscape = panel.orientation === "LANDSCAPE";
-          const drawWidth = landscape ? panelHeightPixels : panelWidthPixels;
-          const drawHeight = landscape ? panelWidthPixels : panelHeightPixels;
-          context.save();
-          context.translate(x, y);
-          context.rotate(panel.azimuthDegrees * Math.PI / 180);
-          context.fillStyle = "rgba(17, 43, 58, .88)";
-          context.strokeStyle = "rgba(255, 255, 255, .95)";
-          context.lineWidth = Math.max(1, width / 350);
-          context.fillRect(-drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
-          context.strokeRect(-drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
-          context.restore();
+        // Projection metadata varies across Google Solar imagery responses.
+        // The aerial image itself is useful even when a browser cannot parse a
+        // particular projection, so panel-overlay failure must never hide it.
+        try {
+          const geoKeys = image.getGeoKeys();
+          if (!geoKeys) throw new Error("Missing GeoTIFF projection metadata");
+          const projectionData = toProj4(geoKeys);
+          const projection = proj4(projectionData.proj4, "WGS84");
+          const box = image.getBoundingBox();
+          const convert = (x: number, y: number) => projection.forward({
+            x: x * projectionData.conversionParameters.x,
+            y: y * projectionData.conversionParameters.y,
+          });
+          const southWest = convert(box[0], box[1]);
+          const northEast = convert(box[2], box[3]);
+          const west = Math.min(southWest.x, northEast.x), east = Math.max(southWest.x, northEast.x);
+          const south = Math.min(southWest.y, northEast.y), north = Math.max(southWest.y, northEast.y);
+          const horizontalMeters = Math.max((east - west) * 111_320 * Math.cos(((north + south) / 2) * Math.PI / 180), 1);
+          const verticalMeters = Math.max((north - south) * 111_320, 1);
+          for (const panel of panels.slice(0, panelCount)) {
+            const x = (panel.center.longitude - west) / (east - west) * width;
+            const y = (north - panel.center.latitude) / (north - south) * height;
+            const panelWidth = 1.13 / horizontalMeters * width, panelHeight = 1.8 / verticalMeters * height;
+            const drawWidth = panel.orientation === "LANDSCAPE" ? panelHeight : panelWidth;
+            const drawHeight = panel.orientation === "LANDSCAPE" ? panelWidth : panelHeight;
+            context.save(); context.translate(x, y); context.rotate(panel.azimuthDegrees * Math.PI / 180);
+            context.fillStyle = "rgba(17, 43, 58, .88)"; context.strokeStyle = "rgba(255, 255, 255, .95)";
+            context.lineWidth = Math.max(1, width / 350); context.fillRect(-drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight); context.strokeRect(-drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight); context.restore();
+          }
+        } catch {
+          // The base imagery remains visible; the product marks layouts as indicative.
         }
         if (!cancelled) setStatus("ready");
       } catch {
