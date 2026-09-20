@@ -22,6 +22,13 @@
       "when": 1789857121528,
       "tag": "0002_pale_ares",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1789925810919,
+      "tag": "0003_low_princess_powerful",
+      "breakpoints": true
     }
   ]
 }

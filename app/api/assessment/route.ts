@@ -1,4 +1,5 @@
 import { recordApiUsage } from "../../../db/runtime";
+import { getD1 } from "../../../db/runtime";
 import { providerSecret } from "../../../db/provider-config";
 
 const DESNZ_CSV = "https://assets.publishing.service.gov.uk/media/694282a1fdbd8404f9e1f1da/Postcode_level_all_meters_electricity_2024.csv";
@@ -14,6 +15,8 @@ type ElectricityRow = {
 };
 
 type AddressResult = { formatted: string; latitude: number; longitude: number };
+
+type CachedAddressRow = { addresses_json: string };
 
 function normalisePostcode(value: string) {
   const compact = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -99,6 +102,22 @@ async function lookupElectricity(postcode: string): Promise<ElectricityRow | nul
 }
 
 async function lookupAddresses(postcode: string, fallbackLatitude: number, fallbackLongitude: number) {
+  // A successful postcode lookup costs one Ideal Postcodes credit. The cache is
+  // shared by every device because it lives in D1, not in a browser session.
+  try {
+    const cached = await getD1().prepare(
+      "SELECT addresses_json FROM postcode_address_cache WHERE postcode = ? AND cached_at >= datetime('now', '-30 days')",
+    ).bind(postcode).first<CachedAddressRow>();
+    if (cached?.addresses_json) {
+      const addresses = JSON.parse(cached.addresses_json) as AddressResult[];
+      if (Array.isArray(addresses) && addresses.length) {
+        return { configured: true, status: "ready", source: "cache", addresses };
+      }
+    }
+  } catch {
+    // A cache failure must never prevent a customer from obtaining an address.
+  }
+
   const apiKey = providerSecret("IDEAL_POSTCODES_API_KEY", process.env.IDEAL_POSTCODES_API_KEY);
   if (!apiKey) return { configured: false, status: "not_configured", error: "Automatic address lookup is not connected. Enter your address manually for now.", addresses: [] as AddressResult[] };
 
@@ -118,6 +137,15 @@ async function lookupAddresses(postcode: string, fallbackLatitude: number, fallb
       longitude: item.longitude != null && Number.isFinite(longitude) ? longitude : fallbackLongitude,
     };
   });
+  if (addresses.length) {
+    try {
+      await getD1().prepare(
+        "INSERT INTO postcode_address_cache (postcode, addresses_json, cached_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(postcode) DO UPDATE SET addresses_json = excluded.addresses_json, cached_at = excluded.cached_at",
+      ).bind(postcode, JSON.stringify(addresses)).run();
+    } catch {
+      // The paid lookup succeeded, so return it even if writing the cache fails.
+    }
+  }
   return { configured: true, status: addresses.length ? "ready" : "no_results", addresses };
 }
 

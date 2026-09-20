@@ -68,3 +68,9 @@ export const apiUsageEvents = sqliteTable("api_usage_events", {
   index("idx_api_usage_created_at").on(table.createdAt),
   index("idx_api_usage_provider_created_at").on(table.provider, table.createdAt),
 ]);
+
+export const postcodeAddressCache = sqliteTable("postcode_address_cache", {
+  postcode: text("postcode").primaryKey(),
+  addressesJson: text("addresses_json").notNull(),
+  cachedAt: text("cached_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
