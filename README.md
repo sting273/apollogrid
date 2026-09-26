@@ -1,5 +1,17 @@
 # ApolloGrid solar assessment
 
+## Road Show Experiment
+
+The homepage navigation and `/road-show` route link to the field experiment app:
+https://road-show-experiment.guoyiding273.chatgpt.site . Its source is included in
+`road-show/` as an independently deployed app with its own D1 database. See
+`road-show/docs/road-show-v2.md` for roles, name-only entry, optional QR registration,
+Chinese/English UI, offline drafts, Excel export and verification. QR enforcement is
+OFF by default and can only be changed by the Road Show owner. Solar records and
+Road Show records remain in their respective databases.
+
+Build and test this Solar app separately from `road-show/`.
+
 ApolloGrid is a public UK solar assessment for customers and an authenticated operations dashboard for the team. Customer measurements, survey requests and API activity are stored in Cloudflare D1.
 
 ## Local development

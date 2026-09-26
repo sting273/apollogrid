@@ -275,7 +275,7 @@ export default function Home() {
   };
 
   if (stage === "find") return <main>
-    <nav className="nav"><Brand/><span className="nav-note">60-second solar estimate</span></nav>
+    <nav className="nav"><Brand/><div className="product-nav"><span className="nav-note">60-second solar estimate</span><a href="https://road-show-experiment.guoyiding273.chatgpt.site">Road Show Experiment <span aria-hidden="true">↗</span></a></div></nav>
     <section className="statement-hero">
       <div className="statement-layout">
         <div className="statement-copy">
